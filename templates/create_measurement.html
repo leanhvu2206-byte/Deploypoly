@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-3">Tạo mới bài đo (Thiết lập Specs)</h3>
+
+<form method="post" class="card p-3" id="create-form">
+  <div class="row g-3">
+    <!-- Cột 1: Mã hàng -->
+    <div class="col-md-4">
+      <label class="form-label">Mã hàng <span class="text-danger">*</span></label>
+      <input class="form-control" name="item_code" placeholder="VD: ABC-123" required>
+    </div>
+
+    <!-- Cột 2: Kích thước -->
+    <div class="col-md-4">
+      <label class="form-label">Kích thước ID</label>
+      <input class="form-control mb-3" name="id_size" type="number" step="any" placeholder="VD: 10.00">
+
+      <label class="form-label">Kích thước OD 1</label>
+      <input class="form-control mb-3" name="od1_size" type="number" step="any" placeholder="VD: 20.00">
+
+      <label class="form-label">Kích thước OD 2</label>
+      <input class="form-control mb-2" name="od2_size" type="number" step="any" placeholder="VD: 30.00">
+
+      <!-- Kích thước thêm -->
+      <div id="dim-sizes"></div>
+    </div>
+
+    <!-- Cột 3: Dung sai -->
+    <div class="col-md-4">
+      <label class="form-label">Dung sai ID</label>
+      <input class="form-control mb-3" name="id_tol" placeholder="VD: ±0.02 hoặc +0.02/-0.01">
+
+      <label class="form-label">Dung sai OD 1</label>
+      <input class="form-control mb-3" name="od1_tol" placeholder="VD: ±0.03">
+
+      <label class="form-label">Dung sai OD 2</label>
+      <input class="form-control mb-2" name="od2_tol" placeholder="VD: ±0.03">
+
+      <!-- Dung sai cho kích thước thêm -->
+      <div id="dim-tols"></div>
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <button type="button" class="btn btn-outline-primary btn-sm" id="btn-add-dim">+ Thêm kích thước</button>
+    <span class="text-muted small ms-2">Ví dụ: “OD 3”, “OD 4”, “R 1.5”, …</span>
+  </div>
+
+  <input type="hidden" name="extra_checks_spec" id="extra_checks_spec">
+
+  <div class="mt-4 d-flex gap-2">
+    <button class="btn btn-primary" type="submit">Lưu</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('list_measurements') }}">Hủy</a>
+  </div>
+</form>
+
+<script>
+(function(){
+  const form       = document.getElementById('create-form');
+  const addDimBtn  = document.getElementById('btn-add-dim');
+  const sizesCol   = document.getElementById('dim-sizes');
+  const tolsCol    = document.getElementById('dim-tols');
+  const hiddenJson = document.getElementById('extra_checks_spec');
+
+  // Danh sách kích thước động đã thêm
+  const dynamicDims = []; // [{id, name, sizeInput, tolInput}]
+
+  function mkIdFromName(name){
+    return name.toLowerCase().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
+  }
+
+  function addDimension(name){
+    const clean = name.trim();
+    if(!clean) return;
+    const id = mkIdFromName(clean);
+    if(dynamicDims.find(d => d.id === id)) return; // tránh trùng
+
+    // Tạo block kích thước (cột giữa) có nút xóa
+    const sizeWrap = document.createElement('div');
+    sizeWrap.className = 'mb-2';
+    sizeWrap.dataset.dim = id;
+    sizeWrap.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center">
+        <label class="form-label mb-1">${clean}</label>
+        <button type="button" class="btn btn-link btn-sm text-danger p-0 dim-del" data-dim="${id}">Xóa</button>
+      </div>
+      <input class="form-control" type="number" step="any" placeholder="VD: 12.34" data-dim="${id}">
+    `;
+    sizesCol.appendChild(sizeWrap);
+
+    // Tạo block dung sai (cột phải)
+    const tolWrap = document.createElement('div');
+    tolWrap.className = 'mb-2';
+    tolWrap.dataset.dim = id;
+    tolWrap.innerHTML = `
+      <label class="form-label">Dung sai ${clean}</label>
+      <input class="form-control" placeholder="VD: ±0.03 hoặc +0.02/-0.01" data-dim="${id}">
+    `;
+    tolsCol.appendChild(tolWrap);
+
+    dynamicDims.push({
+      id,
+      name: clean,
+      sizeInput: sizeWrap.querySelector('input'),
+      tolInput:  tolWrap.querySelector('input')
+    });
+  }
+
+  // Thêm kích thước mới
+  addDimBtn.addEventListener('click', ()=>{
+    const name = prompt('Tên kích thước muốn thêm (ví dụ: OD 3):');
+    if(name) addDimension(name);
+  });
+
+  // Xóa kích thước: xóa cả cặp (kích thước + dung sai)
+  sizesCol.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.dim-del');
+    if(!btn) return;
+    const id = btn.dataset.dim;
+    // xóa DOM
+    const sw = sizesCol.querySelector(`[data-dim="${id}"]`);
+    const tw = tolsCol.querySelector(`[data-dim="${id}"]`);
+    if (sw) sw.remove();
+    if (tw) tw.remove();
+    // xóa trong mảng theo id
+    const idx = dynamicDims.findIndex(d=>d.id===id);
+    if(idx>=0) dynamicDims.splice(idx,1);
+  });
+
+  // Parse chuỗi dung sai -> (plus, minus)
+  function parseTolStr(s){
+    if(!s) return {plus:null, minus:null};
+    s = String(s).trim().replace('±','+');
+    let plus=null, minus=null;
+    if (s.includes('/')){
+      const [a,b]=s.split('/',2).map(x=>x.trim());
+      if(a.startsWith('+')) plus=parseFloat(a.slice(1));
+      if(a.startsWith('-')) minus=Math.abs(parseFloat(a.slice(1)));
+      if(b.startsWith('+')) plus=parseFloat(b.slice(1));
+      if(b.startsWith('-')) minus=Math.abs(parseFloat(b.slice(1)));
+    } else {
+      if (s.startsWith('+')) { plus=parseFloat(s.slice(1)); minus=plus; }
+      else if (s.startsWith('-')) { minus=Math.abs(parseFloat(s.slice(1))); plus=minus; }
+      else { const v=parseFloat(s); if(!isNaN(v)) { plus=v; minus=v; } }
+    }
+    return {plus: isNaN(plus)?null:plus, minus: isNaN(minus)?null:minus};
+  }
+
+  // Gom các kích thước thêm vào extra_checks_spec
+  form.addEventListener('submit', ()=>{
+    const arr = dynamicDims.map(d=>{
+      const nominal = d.sizeInput.value ? parseFloat(d.sizeInput.value) : null;
+      const tolObj = parseTolStr(d.tolInput.value);
+      return {
+        name: d.name,
+        nominal,
+        tol_plus: tolObj.plus,
+        tol_minus: tolObj.minus
+      };
+    });
+    hiddenJson.value = JSON.stringify(arr);
+  });
+})();
+</script>
+{% endblock %}

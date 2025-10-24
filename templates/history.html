@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block content %}
+  <h3 class="mb-3">Lịch sử bài đo</h3>
+
+  <form class="row g-2 mb-3" method="get">
+    <div class="col-auto">
+      <label class="form-label">Từ</label>
+      <input class="form-control" type="datetime-local" name="start" value="{{ start or '' }}">
+    </div>
+    <div class="col-auto">
+      <label class="form-label">Đến</label>
+      <input class="form-control" type="datetime-local" name="end" value="{{ end or '' }}">
+    </div>
+    <div class="col-auto align-self-end">
+      <button class="btn btn-outline-primary" type="submit">Lọc</button>
+    </div>
+
+    {# NÚT TẢI CSV #}
+    <div class="col-auto align-self-end">
+      <button class="btn btn-success" type="button" id="btn-export-csv">
+        ⬇️ Tải CSV
+      </button>
+    </div>
+  </form>
+
+  <style>
+    /* Bảng gọn & không chồng chữ */
+    table.table { width: 100%; table-layout: auto; }
+    th, td { vertical-align: top; white-space: normal; word-wrap: break-word; line-height: 1.3; }
+
+    /* Chip dùng chung cho Actuals & Extras */
+    .chips { display: flex; flex-direction: column; gap: .35rem; }
+    .extras { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: flex-start; }
+    .chip {
+      display: inline-flex; align-items: center; gap: .35rem;
+      padding: .28rem .55rem; border: 1px solid #e5e7eb; border-radius: 9999px;
+      background: #fff; font-size: .83rem; line-height: 1.2; white-space: nowrap;
+    }
+    .chip--pass { border-color: #a7f3d0; background: #ecfdf5; }
+    .chip--fail { border-color: #fecaca; background: #fef2f2; }
+    .chip__name { font-weight: 600; }
+    .chip__tol { color: #6b7280; margin-left: .15rem; }
+    .chip__badge {
+      font-weight: 700; font-size: .75rem; padding: .1rem .45rem; border-radius: 9999px; background: #e5e7eb;
+    }
+
+    /* Cột người đo */
+    .who { line-height: 1.25; }
+    .who__name { font-weight: 600; }
+    .who__area { color: #6b7280; font-size: .85em; }
+    .who__note {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; text-overflow: ellipsis; white-space: normal;
+      margin-top: .15rem; font-size: .9em; color: #374151;
+    }
+  </style>
+
+  {# Macro để render một chip kích thước (ID/OD1/OD2) #}
+  {% macro dim_chip(name, size, tol, actual, verdict) -%}
+    {%- set status = verdict -%}
+    <span class="chip {{ status==1 and 'chip--pass' or (status==0 and 'chip--fail' or '') }}">
+      <span class="chip__name">{{ name }}</span>
+      <span class="chip__dim">
+        {{ size is not none and size or '—' }}
+        {% if tol %}<span class="chip__tol">({{ tol }})</span>{% endif %}
+      </span>
+      <span class="chip__actual">Actual: {{ actual is not none and actual or '—' }}</span>
+      {% if status is not none %}
+        <span class="chip__badge">{{ status==1 and 'PASS' or 'FAIL' }}</span>
+      {% endif %}
+    </span>
+  {%- endmacro %}
+
+  <table class="table table-bordered align-middle" id="history-table">
+    <thead>
+      <tr>
+        <th style="width:6%">ID</th>
+        <th style="width:12%">Mã hàng</th>
+        <th style="width:28%">Kích thước &amp; Actual (ID / OD1 / OD2)</th>
+        <th>Extras (kèm PASS/FAIL)</th>
+        <th style="width:18%">Người đo / Khu vực / Ghi chú</th>
+        <th style="width:10%">Verdict</th>
+        <th style="width:14%">Thời gian</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.item_code or '' }}</td>
+
+          <!-- Actuals: hiển thị size + tol + actual + PASS/FAIL cho từng kích thước -->
+          <td>
+            <div class="chips">
+              {{ dim_chip('ID',  r.id_size,  r.id_tol,  r.actual_id,  r.verdict_id) }}
+              {{ dim_chip('OD1', r.od1_size, r.od1_tol, r.actual_od1, r.verdict_od1) }}
+              {{ dim_chip('OD2', r.od2_size, r.od2_tol, r.actual_od2, r.verdict_od2) }}
+            </div>
+          </td>
+
+          <!-- Extras: mỗi hạng mục có Actual + PASS/FAIL (dùng filter render_extras đã có) -->
+          <td>
+            {{ r.extra_checks | render_extras | safe }}
+          </td>
+
+          <!-- Người đo / KV / Ghi chú -->
+          <td>
+            <div class="who">
+              <div class="who__name">
+                {{ r.measured_by or '—' }}
+                {% if r.area %}<span class="who__area"> • {{ r.area }}</span>{% endif %}
+              </div>
+              {% if r.note %}
+                <small class="who__note" title="{{ r.note }}">{{ r.note }}</small>
+              {% else %}
+                <small class="text-muted">—</small>
+              {% endif %}
+            </div>
+          </td>
+
+          <td>
+            {% if r.verdict_overall is not none %}
+              <span class="badge {{ r.verdict_overall and 'bg-success' or 'bg-danger' }}">
+                {{ r.verdict_overall and 'PASS' or 'FAIL' }}
+              </span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+
+          <td>{{ r.created_at | fmt_dt }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted">Không có dữ liệu</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# ====== JS: Xuất CSV từ bảng hiện tại ====== #}
+  <script>
+    (function() {
+      function escapeCSV(value) {
+        if (value == null) return '';
+        // Lấy text thuần (loại bỏ khoảng trắng thừa)
+        let v = String(value).replace(/\s+\n/g, '\n').trim();
+        // Nếu có dấu phẩy, xuống dòng hoặc dấu ngoặc kép → bao bằng ngoặc kép và escape "
+        if (/[",\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
+        return v;
+      }
+
+      function tableToCSV(table) {
+        const rows = [];
+        const thead = table.querySelector('thead');
+        const tbody = table.querySelector('tbody');
+
+        const pickCells = (tr) => [...tr.children].map(td =>
+          escapeCSV(td.textContent.replace(/\u00A0/g, ' ').trim())
+        );
+
+        if (thead) {
+          const hdr = thead.querySelector('tr');
+          if (hdr) rows.push(pickCells(hdr).join(','));
+        }
+
+        if (tbody) {
+          tbody.querySelectorAll('tr').forEach(tr => {
+            rows.push(pickCells(tr).join(','));
+          });
+        }
+
+        return rows.join('\n');
+      }
+
+      function downloadCSV(csvText, filename) {
+        // BOM để Excel đọc đúng UTF-8 tiếng Việt
+        const blob = new Blob(["\uFEFF" + csvText], { type: "text/csv;charset=utf-8;" });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 0);
+      }
+
+      function buildFilename() {
+        const start = {{ (start or '') | tojson }};
+        const end   = {{ (end   or '') | tojson }};
+        const parts = ['lich-su-bai-do'];
+        if (start) parts.push('from-' + start.replace(/[:T]/g, '-'));
+        if (end)   parts.push('to-'   + end.replace(/[:T]/g, '-'));
+        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        parts.push(ts);
+        return parts.join('_') + '.csv';
+      }
+
+      document.getElementById('btn-export-csv')?.addEventListener('click', () => {
+        const table = document.getElementById('history-table');
+        if (!table) return;
+        const csv = tableToCSV(table);
+        downloadCSV(csv, buildFilename());
+      });
+    })();
+  </script>
+{% endblock %}

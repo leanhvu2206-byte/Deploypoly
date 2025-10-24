@@ -1,0 +1,4 @@
+body { background: #f7f7f9; }
+.card.stat { border-left: 4px solid #0d6efd; }
+.stat-label { color: #6c757d; font-size: 0.9rem; }
+.stat-value { font-size: 1.8rem; font-weight: 700; }

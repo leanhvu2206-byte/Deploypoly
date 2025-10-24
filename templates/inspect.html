@@ -1,0 +1,765 @@
+{% extends "base.html" %}
+{% block content %}
+  <h3 class="mb-3">Đo hàng</h3>
+
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+      <input
+        class="form-control"
+        name="item_code"
+        placeholder="Nhập Mã hàng..."
+        value="{{ item_code or '' }}"
+        required
+      >
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary" type="submit">Tìm / Khởi tạo</button>
+    </div>
+  </form>
+
+  {% if item_code %}
+
+    {% if not latest %}
+      <div class="alert alert-info">
+        Chưa có dữ liệu cho <strong>{{ item_code }}</strong>. Hãy thiết lập specs lần đầu.
+      </div>
+
+      <form method="post" class="card p-3" id="init-specs-form">
+        <input type="hidden" name="item_code" value="{{ item_code }}">
+        <input type="hidden" name="init_specs" value="on">
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Kích thước ID</label>
+            <input class="form-control mb-3" name="id_size" type="number" step="any" placeholder="VD: 10.00">
+
+            <label class="form-label">Kích thước OD1</label>
+            <input class="form-control mb-3" name="od1_size" type="number" step="any" placeholder="VD: 20.00">
+
+            <label class="form-label">Kích thước OD2</label>
+            <input class="form-control mb-2" name="od2_size" type="number" step="any" placeholder="VD: 30.00">
+
+            <div id="init-dim-sizes"></div>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Dung sai ID</label>
+            <input class="form-control mb-3" name="id_tol" placeholder="VD: ±0.02 hoặc +0.02/-0.01">
+
+            <label class="form-label">Dung sai OD1</label>
+            <input class="form-control mb-3" name="od1_tol" placeholder="VD: ±0.03">
+
+            <label class="form-label">Dung sai OD2</label>
+            <input class="form-control mb-2" name="od2_tol" placeholder="VD: ±0.03">
+
+            <div id="init-dim-tols"></div>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-init-add-dim">
+            + Thêm kích thước
+          </button>
+          <span class="text-muted small ms-2">Ví dụ: “OD 3”, “R 1.5”…</span>
+        </div>
+
+        <input type="hidden" name="extra_checks_spec" id="init_extra_checks_spec">
+
+        <div class="mt-4 d-flex gap-2">
+          <button class="btn btn-success" type="submit">Lưu specs</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('inspect_measure') }}">Hủy</a>
+        </div>
+      </form>
+
+      <script>
+        (function() {
+          const form   = document.getElementById('init-specs-form');
+          const addBtn = document.getElementById('btn-init-add-dim');
+          const sizes  = document.getElementById('init-dim-sizes');
+          const tols   = document.getElementById('init-dim-tols');
+          const hidden = document.getElementById('init_extra_checks_spec');
+
+          const dims = [];
+          const mkId = n => n.toLowerCase().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+
+          function addDim(name) {
+            const nm = (name || '').trim();
+            if (!nm) return;
+
+            const id = mkId(nm);
+            if (dims.find(d => d.id === id)) return;
+
+            const sw = document.createElement('div');
+            sw.className = 'mb-2';
+            sw.dataset.dim = id;
+            sw.innerHTML = `
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label mb-1">${nm}</label>
+                <button type="button" class="btn btn-link btn-sm text-danger p-0 dim-del" data-dim="${id}">Xóa</button>
+              </div>
+              <input class="form-control" type="number" step="any" placeholder="VD: 12.34" data-dim="${id}">
+            `;
+            sizes.appendChild(sw);
+
+            const tw = document.createElement('div');
+            tw.className = 'mb-2';
+            tw.dataset.dim = id;
+            tw.innerHTML = `
+              <label class="form-label">Dung sai ${nm}</label>
+              <input class="form-control" placeholder="VD: ±0.03 hoặc +0.02/-0.01" data-dim="${id}">
+            `;
+            tols.appendChild(tw);
+
+            dims.push({ id, name: nm, sizeInput: sw.querySelector('input'), tolInput: tw.querySelector('input') });
+          }
+
+          addBtn.addEventListener('click', () => {
+            const name = prompt('Tên kích thước muốn thêm (ví dụ: OD 3):');
+            if (name) addDim(name);
+          });
+
+          sizes.addEventListener('click', e => {
+            const btn = e.target.closest('.dim-del');
+            if (!btn) return;
+
+            const id = btn.dataset.dim;
+            sizes.querySelector(`[data-dim="${id}"]`)?.remove();
+            tols.querySelector(`[data-dim="${id}"]`)?.remove();
+
+            const i = dims.findIndex(d => d.id === id);
+            if (i >= 0) dims.splice(i, 1);
+          });
+
+          function parseTolStr(s) {
+            if (!s) return { plus: null, minus: null };
+            s = String(s).trim().replace('±', '+');
+
+            let plus = null, minus = null;
+
+            if (s.includes('/')) {
+              const [a, b] = s.split('/', 2).map(x => x.trim());
+              if (a.startsWith('+')) plus  = parseFloat(a.slice(1));
+              if (a.startsWith('-')) minus = Math.abs(parseFloat(a.slice(1)));
+              if (b.startsWith('+')) plus  = parseFloat(b.slice(1));
+              if (b.startsWith('-')) minus = Math.abs(parseFloat(b.slice(1)));
+            } else {
+              if (s.startsWith('+')) {
+                plus = parseFloat(s.slice(1));
+                minus = plus;
+              } else if (s.startsWith('-')) {
+                minus = Math.abs(parseFloat(s.slice(1)));
+                plus = minus;
+              } else {
+                const v = parseFloat(s);
+                if (!isNaN(v)) { plus = v; minus = v; }
+              }
+            }
+
+            return {
+              plus:  isNaN(plus)  ? null : plus,
+              minus: isNaN(minus) ? null : minus
+            };
+          }
+
+          form.addEventListener('submit', () => {
+            const arr = dims.map(d => {
+              const nominal = d.sizeInput.value ? parseFloat(d.sizeInput.value) : null;
+              const t = parseTolStr(d.tolInput.value);
+              return { name: d.name, nominal, tol_plus: t.plus, tol_minus: t.minus };
+            });
+            hidden.value = JSON.stringify(arr);
+          });
+        })();
+      </script>
+
+    {% else %}
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">
+            Mã hàng: <span class="text-primary">{{ item_code }}</span>
+          </h5>
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="small text-muted">ID</div>
+              <div>
+                <strong>{{ latest.id_size is not none and latest.id_size or '—' }}</strong>
+                {% if latest.id_tol %} ({{ latest.id_tol }}){% endif %}
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <div class="small text-muted">OD1</div>
+              <div>
+                <strong>{{ latest.od1_size is not none and latest.od1_size or '—' }}</strong>
+                {% if latest.od1_tol %} ({{ latest.od1_tol }}){% endif %}
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <div class="small text-muted">OD2</div>
+              <div>
+                <strong>{{ latest.od2_size is not none and latest.od2_size or '—' }}</strong>
+                {% if latest.od2_tol %} ({{ latest.od2_tol }}){% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FORM ĐO + THÔNG TIN -->
+      <form method="post" class="card p-3 mb-4" id="auto-form">
+        <input type="hidden" name="item_code" value="{{ item_code }}">
+        <input type="hidden" name="extra_checks_actual" id="extra_checks_actual">
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Người đo</label>
+            <input
+              class="form-control"
+              name="measured_by"
+              placeholder="VD: Nguyễn Văn A"
+              value="{{ request.values.get('measured_by', session.get('username','')) }}"
+            >
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Khu vực đo</label>
+            <input
+              class="form-control"
+              name="measure_area"
+              placeholder="VD: Line 1 / Khu A"
+              value="{{ request.values.get('measure_area','') }}"
+            >
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Ghi chú</label>
+            <input
+              class="form-control"
+              name="note"
+              placeholder="Ghi chú thêm (nếu có)"
+              value="{{ request.values.get('note','') }}"
+            >
+          </div>
+        </div>
+
+        <h6 class="mb-3 mt-3">Nhập số liệu đo (tự động phán định & lưu)</h6>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Actual ID</label>
+            <input
+              class="form-control auto-input auto-flow"
+              name="actual_id"
+              value="{{ actual_id is not none and actual_id or '' }}"
+              type="number"
+              step="any"
+              placeholder="VD: 10.01"
+            >
+            {% set r = verdict.ranges.id %}
+            {% if r and r[0] is not none %}
+              <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
+            {% endif %}
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Actual OD1</label>
+            <input
+              class="form-control auto-input auto-flow"
+              name="actual_od1"
+              value="{{ actual_od1 is not none and actual_od1 or '' }}"
+              type="number"
+              step="any"
+              placeholder="VD: 20.00"
+            >
+            {% set r = verdict.ranges.od1 %}
+            {% if r and r[0] is not none %}
+              <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
+            {% endif %}
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Actual OD2</label>
+            <input
+              class="form-control auto-input auto-flow"
+              name="actual_od2"
+              value="{{ actual_od2 is not none and actual_od2 or '' }}"
+              type="number"
+              step="any"
+              placeholder="VD: 30.00"
+            >
+            {% set r = verdict.ranges.od2 %}
+            {% if r and r[0] is not none %}
+              <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Form thêm hạng mục (hiển thị ngang) -->
+        <div class="border rounded p-3 bg-light mb-3">
+          <input type="hidden" name="add_extra" value="on">
+          <div class="d-flex flex-row align-items-end gap-3 flex-wrap">
+            <div style="min-width: 200px;">
+              <label class="form-label mb-1">Tên hạng mục</label>
+              <input class="form-control form-control-sm" name="add_extra_name" placeholder="VD: OD3, R 1.5">
+            </div>
+            <div style="width: 120px;">
+              <label class="form-label mb-1">Nominal</label>
+              <input class="form-control form-control-sm" name="add_extra_nominal" type="number" step="any" placeholder="12.00">
+            </div>
+            <div style="width: 200px;">
+              <label class="form-label mb-1">Dung sai</label>
+              <input class="form-control form-control-sm" name="add_extra_tol" placeholder="±0.03 hoặc +0.02/-0.01">
+            </div>
+            <div class="d-flex align-items-end">
+              <button class="btn btn-secondary btn-sm" type="submit">+ Thêm hạng mục</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-2">
+          <h6 class="mb-2">Hạng mục kiểm tra bổ sung</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle" id="checks-table">
+              <thead>
+                <tr>
+                  <th>Tên</th>
+                  <th>Nominal</th>
+                  <th>Tol +</th>
+                  <th>Tol −</th>
+                  <th>Actual</th>
+                  <th>Xóa</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <hr class="my-3">
+
+        {% if verdict.overall is not none %}
+          <div class="alert {{ verdict.overall and 'alert-success' or 'alert-danger' }}">
+            <strong>Kết luận:</strong> {{ verdict.overall and 'PASS' or 'FAIL' }}
+            <span class="ms-2 small text-muted">
+              (ID: {{ verdict.id is none and '—' or (verdict.id and 'PASS' or 'FAIL') }},
+               OD1: {{ verdict.od1 is none and '—' or (verdict.od1 and 'PASS' or 'FAIL') }},
+               OD2: {{ verdict.od2 is none and '—' or (verdict.od2 and 'PASS' or 'FAIL') }})
+            </span>
+          </div>
+        {% endif %}
+
+        {% if missing_fields and missing_fields | length > 0 %}
+          <div class="alert alert-warning mt-2">
+            ⚠️ Chưa đủ số liệu để phán định hoặc lưu kết quả.<br>
+            Thiếu: {{ missing_fields | join(', ') }}.
+          </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary mt-2">Đo & Phán định</button>
+      </form>
+
+      <!-- LỊCH SỬ -->
+      <h5 class="mt-3">Lịch sử {{ item_code }}</h5>
+
+      <style>
+        /* Chip & màu PASS/FAIL cho lịch sử */
+        .chips { display: flex; flex-direction: column; gap: .35rem; }
+        .chip {
+          display: inline-flex; align-items: center; gap: .35rem;
+          padding: .28rem .55rem; border: 1px solid #e5e7eb; border-radius: 9999px;
+          background: #fff; font-size: .83rem; line-height: 1.2; white-space: nowrap;
+        }
+        .chip__name { font-weight: 600; }
+        .chip__tol { color: #6b7280; margin-left: .15rem; }
+        .chip__badge {
+          font-weight: 700; font-size: .75rem; padding: .1rem .45rem;
+          border-radius: 9999px; background: #e5e7eb;
+        }
+        .chip--pass { border-color: #a7f3d0; background: #ecfdf5; }
+        .chip--fail { border-color: #fecaca; background: #fef2f2; }
+
+        .table-history th, .table-history td {
+          vertical-align: top;
+          white-space: normal;
+          word-wrap: break-word;
+          line-height: 1.3;
+        }
+
+        /* Pill verdict tổng thể (đồng bộ trang khác) */
+        .pill {
+          display: inline-block; padding: .35rem .7rem; border-radius: 9999px;
+          font-weight: 700; font-size: .8rem; line-height: 1; color: #fff; min-width: 70px;
+          text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,.15);
+        }
+        .pill--pass { background: linear-gradient(135deg, #16a34a, #22c55e); }
+        .pill--fail { background: linear-gradient(135deg, #dc2626, #ef4444); }
+
+        .done-tick {
+          position: fixed; top: 50%; left: 50%;
+          transform: translate(-50%, -50%) scale(0.9);
+          background: rgba(255,255,255,0.95); border-radius: 1rem;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+          padding: 1.5rem 2rem; text-align: center; z-index: 2000;
+          animation: tick-pop 0.4s ease-out forwards;
+        }
+        .tick-circle { width: 80px; height: 80px; margin: 0 auto; }
+        .tick-ring {
+          stroke: #22c55e; stroke-width: 4; stroke-dasharray: 166;
+          stroke-dashoffset: 166; stroke-linecap: round;
+          animation: ring 0.6s ease-out forwards;
+        }
+        .tick-mark {
+          stroke: #22c55e; stroke-width: 4; stroke-linecap: round;
+          stroke-dasharray: 48; stroke-dashoffset: 48;
+          animation: mark 0.4s ease-out 0.6s forwards;
+        }
+        .tick-label {
+          margin-top: .6rem; font-weight: 600; color: #16a34a;
+          font-size: 1rem; letter-spacing: 0.5px; opacity: 0;
+          animation: fade-in 0.5s ease 1s forwards;
+        }
+        @keyframes ring { to { stroke-dashoffset: 0; } }
+        @keyframes mark { to { stroke-dashoffset: 0; } }
+        @keyframes fade-in { to { opacity: 1; } }
+        @keyframes tick-pop {
+          from { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
+          to   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+        .done-tick.fade-out {
+          opacity: 0; transform: translate(-50%, -50%) scale(0.95);
+          transition: all .5s ease;
+        }
+      </style>
+
+      {# Macro hiển thị chip cho ID/OD1/OD2 #}
+      {% macro dim_chip(name, size, tol, actual, verdict) -%}
+        {%- set v = verdict -%}
+        <span class="chip {{ v==1 and 'chip--pass' or (v==0 and 'chip--fail' or '') }}">
+          <span class="chip__name">{{ name }}</span>
+          <span class="chip__dim">
+            {{ size is not none and size or '—' }}
+            {% if tol %}<span class="chip__tol">({{ tol }})</span>{% endif %}
+          </span>
+          <span class="chip__actual">Actual: {{ actual is not none and actual or '—' }}</span>
+          {% if v is not none %}
+            <span class="chip__badge">{{ v==1 and 'PASS' or 'FAIL' }}</span>
+          {% endif %}
+        </span>
+      {%- endmacro %}
+
+      <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle table-history">
+          <thead>
+            <tr>
+              <th style="width:70px;">ID</th>
+              <th style="width:36%;">ID / OD1 / OD2</th>
+              <th>Extras (kèm PASS/FAIL)</th>
+              <th style="width:120px;" class="text-center">Verdict</th>
+              <th style="width:260px;">Thông tin</th>
+              <th style="width:220px;" class="text-end">Thời gian</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              <tr>
+                <td class="nowrap">{{ r.id }}</td>
+
+                <!-- Ba kích thước chính -->
+                <td>
+                  <div class="chips">
+                    {{ dim_chip('ID',  r.id_size,  r.id_tol,  r.actual_id,  r.verdict_id) }}
+                    {{ dim_chip('OD1', r.od1_size, r.od1_tol, r.actual_od1, r.verdict_od1) }}
+                    {{ dim_chip('OD2', r.od2_size, r.od2_tol, r.actual_od2, r.verdict_od2) }}
+                  </div>
+                </td>
+
+                <!-- Extras -->
+                <td>
+                  {{ r.extra_checks | render_extras | safe }}
+                </td>
+
+                <!-- Verdict tổng thể -->
+                <td class="text-center">
+                  {% if r.verdict_overall is not none %}
+                    <span class="pill {{ r.verdict_overall and 'pill--pass' or 'pill--fail' }}">
+                      {{ r.verdict_overall and 'PASS' or 'FAIL' }}
+                    </span>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+
+                <td class="text-muted">
+                  <div>Người đo: <strong>{{ r.measured_by or '—' }}</strong></div>
+                  <div>Khu vực: {{ r.area or '—' }}</div>
+                  <div>Ghi chú: {{ r.note or '—' }}</div>
+                </td>
+
+                <td class="text-end text-muted nowrap">{{ r.created_at | fmt_dt }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center text-muted">Chưa có dữ liệu</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- JSON spec -->
+      <script id="spec-json" type="application/json">
+{{ (latest.extra_checks or 'null') | safe }}
+      </script>
+
+      <!-- JSON prefill actuals từ server -->
+      <script id="prefill-actuals" type="application/json">
+{{ (extra_checks_actual or []) | tojson | safe }}
+      </script>
+
+      <script>
+        (function() {
+          // Parse spec (baseline)
+          let raw = null;
+          try {
+            const txt = (document.getElementById('spec-json')?.textContent || 'null').trim();
+            raw = JSON.parse(txt);
+          } catch(e) { raw = null; }
+
+          const specObj = Array.isArray(raw) ? { spec: raw } : (raw && typeof raw === 'object' ? raw : { spec: [] });
+
+          const table = document.getElementById('checks-table');
+          const tbody = table ? table.querySelector('tbody') : null;
+
+          // Prefill actuals từ server (request.values) và localStorage
+          let prefill = [];
+          try {
+            prefill = JSON.parse(document.getElementById('prefill-actuals')?.textContent || '[]') || [];
+          } catch(e) { prefill = []; }
+
+          const LS_KEY = 'measure_prefill_' + {{ item_code | tojson }};
+
+          // merge localStorage (ưu tiên input mới)
+          try {
+            const fromLS = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+
+            const map = new Map(prefill.map(x => [String(x.name || '').trim(), x.actual]));
+            (fromLS || []).forEach(x => {
+              const nm = String(x.name || '').trim();
+              if (!map.has(nm) || x.updated) map.set(nm, x.actual);
+            });
+
+            prefill = Array.from(map.entries()).map(([name, actual]) => ({ name, actual }));
+          } catch(e) {}
+
+          const prefillMap = Object.fromEntries((prefill || []).map(x => [String(x.name || '').trim(), x.actual]));
+
+          function rowTpl(d = {}) {
+            const nm  = d.name || '';
+            const val = prefillMap[nm];
+            return `
+              <tr>
+                <td>${nm}</td>
+                <td>${d.nominal ?? ''}</td>
+                <td>${d.tol_plus ?? ''}</td>
+                <td>${d.tol_minus ?? ''}</td>
+                <td>
+                  <input
+                    class="form-control form-control-sm auto-input-ex auto-flow"
+                    type="number" step="any"
+                    data-name="${nm}"
+                    value="${(val ?? '')}"
+                  >
+                </td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-outline-danger del-extra" data-name="${nm}">X</button>
+                </td>
+              </tr>
+            `;
+          }
+
+          // Xóa hạng mục bổ sung
+          if (table) {
+            table.addEventListener('click', e => {
+              const btn = e.target.closest('.del-extra');
+              if (!btn) return;
+
+              const name = btn.dataset.name;
+              if (!confirm(`Xóa hạng mục "${name}"?`)) return;
+
+              // clear prefill in LS
+              try {
+                const arr = JSON
+                  .parse(localStorage.getItem(LS_KEY) || '[]')
+                  .filter(x => (x.name || '').trim().toLowerCase() !== name.toLowerCase());
+                localStorage.setItem(LS_KEY, JSON.stringify(arr));
+              } catch(e) {}
+
+              fetch(`/measurements/delete_extra/${encodeURIComponent(name)}?item_code={{ item_code }}`, { method: 'POST' })
+                .then(() => location.reload());
+            });
+          }
+
+          if (tbody) (specObj.spec || []).forEach(sp => tbody.insertAdjacentHTML('beforeend', rowTpl(sp)));
+
+          // ====== CỜ SPEC CHO 3 KÍCH THƯỚC CHÍNH ======
+          const SPEC_FLAGS = {
+            id:  {{ (latest and (latest.id_size  is not none or latest.id_tol))  and 'true' or 'false' }},
+            od1: {{ (latest and (latest.od1_size is not none or latest.od1_tol)) and 'true' or 'false' }},
+            od2: {{ (latest and (latest.od2_size is not none or latest.od2_tol)) and 'true' or 'false' }},
+          };
+
+          // ====== THỨ TỰ FOCUS THEO SPEC ======
+          function buildFlowOrder() {
+            const order = [];
+            const seen  = new Set();
+            const pushIf = (el) => { if (el && !seen.has(el)) { order.push(el); seen.add(el); } };
+
+            // 1) Ba kích thước chính (chỉ thêm nếu có spec)
+            if (SPEC_FLAGS.id)  pushIf(document.querySelector('input[name="actual_id"]'));
+            if (SPEC_FLAGS.od1) pushIf(document.querySelector('input[name="actual_od1"]'));
+            if (SPEC_FLAGS.od2) pushIf(document.querySelector('input[name="actual_od2"]'));
+
+            // 2) Extras theo thứ tự trong spec
+            (specObj.spec || []).forEach(sp => {
+              const nm = String(sp.name || '').trim();
+              const el = tbody?.querySelector(`input.auto-input-ex[data-name="${CSS.escape(nm)}"]`);
+              pushIf(el);
+            });
+
+            // 3) Bổ sung các ô .auto-flow còn lại (nếu có)
+            document.querySelectorAll('.auto-flow').forEach(el => pushIf(el));
+
+            return order;
+          }
+
+          // Helpers submit & lưu hidden JSON
+          const form = document.getElementById('auto-form');
+
+          function ensureHidden() {
+            let h = document.getElementById('extra_checks_actual');
+            if (!h) {
+              h = document.createElement('input');
+              h.type = 'hidden';
+              h.name = 'extra_checks_actual';
+              h.id   = 'extra_checks_actual';
+              form.appendChild(h);
+            }
+            return h;
+          }
+
+          function collectExtraActuals() {
+            const h = ensureHidden();
+            if (!tbody) { h.value = '[]'; return; }
+
+            const rows = [...tbody.querySelectorAll('tr')];
+            const data = rows
+              .map(tr => {
+                const inp = tr.querySelector('input');
+                return { name: inp.dataset.name, actual: inp.value ? parseFloat(inp.value) : null };
+              })
+              .filter(x => x.name);
+
+            h.value = JSON.stringify(data);
+
+            // Lưu tạm vào localStorage
+            try {
+              const stamped = data.map(x => ({ ...x, updated: true }));
+              localStorage.setItem(LS_KEY, JSON.stringify(stamped));
+            } catch(e) {}
+          }
+
+          // Tự submit sau 600ms khi nhập (để server tính ranges & missing), nhưng giữ prefill
+          let t = null;
+          function autoSubmit() {
+            if (t) clearTimeout(t);
+            t = setTimeout(() => { collectExtraActuals(); form.submit(); }, 600);
+          }
+
+          function setupFocusFlow() {
+            const flow = buildFlowOrder();
+            flow.forEach((el, i) => {
+              el.dataset.idx = i;
+              el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+
+                  // Lưu extra trước khi nhảy nếu đang ở ô extra
+                  if (el.classList.contains('auto-input-ex')) collectExtraActuals();
+
+                  const next = flow[i + 1];
+                  if (next) {
+                    next.focus();
+                    next.select?.();
+                  } else {
+                    // Hết danh sách spec → submit tự động
+                    autoSubmit();
+                  }
+                }
+              });
+            });
+          }
+
+          // Bind sự kiện
+          document.querySelectorAll('.auto-input').forEach(el => el.addEventListener('input', autoSubmit));
+
+          if (table) {
+            table.addEventListener('input', e => {
+              if (e.target.classList.contains('auto-input-ex')) {
+                collectExtraActuals();
+                autoSubmit();
+              }
+            });
+          }
+
+          // Khởi tạo flow và focus vào ô spec trống đầu tiên
+          setupFocusFlow();
+          (function focusFirstEmpty() {
+            const flow = buildFlowOrder();
+            const firstEmpty = flow.find(el => !el.value);
+            (firstEmpty || flow[0])?.focus();
+          })();
+
+          // Trước khi submit thủ công, gom dữ liệu extras vào hidden
+          form.addEventListener('submit', collectExtraActuals);
+
+          // Nếu đã có kết luận (PASS/FAIL) thì reset form đo + tick + focus theo spec
+          {% if verdict.overall is not none %}
+          (function showCompletionTick() {
+            // 1) Xóa dữ liệu actual
+            document.querySelectorAll('input[name^="actual_"]').forEach(el => el.value = '');
+            document.querySelectorAll('#checks-table input.auto-input-ex').forEach(el => el.value = '');
+            try { localStorage.removeItem('measure_prefill_' + {{ item_code | tojson }}); } catch(e) {}
+
+            // 2) Focus lại ô đầu tiên theo SPEC
+            const flow = buildFlowOrder();
+            (flow[0] || document.querySelector('input[name="actual_id"]'))?.focus();
+
+            // 3) Hiển thị tick hoàn tất
+            const tick = document.createElement('div');
+            tick.className = 'done-tick';
+            tick.innerHTML = `
+              <div class="tick-circle">
+                <svg viewBox="0 0 52 52">
+                  <circle class="tick-ring" cx="26" cy="26" r="25" fill="none"/>
+                  <path class="tick-mark" fill="none" d="M14 27l7 7 16-16"/>
+                </svg>
+              </div>
+              <div class="tick-label">Hoàn tất đo</div>
+            `;
+            document.body.appendChild(tick);
+
+            // Xóa tick sau vài giây
+            setTimeout(() => tick.classList.add('fade-out'), 2000);
+            setTimeout(() => tick.remove(), 2600);
+          })();
+          {% endif %}
+        })();
+      </script>
+
+    {% endif %}
+  {% endif %}
+
+{% endblock %}

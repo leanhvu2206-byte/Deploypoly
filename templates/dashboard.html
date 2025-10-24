@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-4">Dashboard</h3>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card stat"><div class="card-body">
+      <div class="stat-label">Tổng số bài đo</div>
+      <div class="stat-value">{{ total or 0 }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat"><div class="card-body">
+      <div class="stat-label">Giá trị trung bình (dựa trên ID)</div>
+      <div class="stat-value">{{ (avg_val or 0) | round(2) }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat"><div class="card-body">
+      <div class="stat-label">Bài đo gần đây</div>
+      <div class="stat-value">{{ recent | length }}</div>
+    </div></div>
+  </div>
+</div>
+
+<style>
+/* Nhẹ nhàng format cột người đo */
+.who {
+  line-height: 1.25;
+}
+.who__name { font-weight: 600; }
+.who__area { color: #6b7280; font-size: .85em; }
+.who__note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;          /* tối đa 2 dòng, hiện … nếu dài */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  margin-top: .15rem;
+  font-size: .9em;
+  color: #374151;
+}
+</style>
+
+<!-- ====== 3 BIỂU ĐỒ ====== -->
+<div class="row g-3 mt-2">
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-3">OK vs NG</h6>
+        <canvas id="chart-okng" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Số lượng kiểm tra trong ngày (theo giờ)</h6>
+        <canvas id="chart-today" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Số lượng bài đo theo ngày (14 ngày gần nhất)</h6>
+        <canvas id="chart-daily" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h5 class="mt-4">5 bài đo mới nhất</h5>
+<table class="table table-hover align-middle">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Mã hàng</th>
+      <th>Actuals</th>
+      <th>Người đo / Khu vực / Ghi chú</th>  {# ⬅️ cột mới #}
+      <th>Verdict</th>
+      <th>Thời gian</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in recent %}
+    <tr>
+      <td>{{ r.id }}</td>
+      <td>{{ r.item_code }}</td>
+
+      <td>
+        {{ r.actual_id is not none and r.actual_id or '—' }}
+        /
+        {{ r.actual_od1 is not none and r.actual_od1 or '—' }}
+        /
+        {{ r.actual_od2 is not none and r.actual_od2 or '—' }}
+      </td>
+
+      <!-- ⬇️ Cột mới: người đo / khu vực / ghi chú -->
+      <td>
+        <div class="who">
+          <div class="who__name">
+            {{ r.measured_by or '—' }}
+            {% if r.area %}
+              <span class="who__area"> • {{ r.area }}</span>
+            {% endif %}
+          </div>
+          {% if r.note %}
+            <small class="who__note" title="{{ r.note }}">{{ r.note }}</small>
+          {% else %}
+            <small class="text-muted">—</small>
+          {% endif %}
+        </div>
+      </td>
+
+      <td>
+        {% if r.verdict_overall is not none %}
+          <span class="badge {{ r.verdict_overall and 'bg-success' or 'bg-danger' }}">
+            {{ r.verdict_overall and 'PASS' or 'FAIL' }}
+          </span>
+        {% else %}—{% endif %}
+      </td>
+      <td>{{ r.created_at | fmt_dt }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-center text-muted">Chưa có dữ liệu</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(function(){
+  // Dữ liệu từ Flask
+  const okCnt   = {{ ok_cnt | default(0) }};
+  const ngCnt   = {{ ng_cnt | default(0) }};
+  const hLabels = {{ hours_labels | tojson | safe }};
+  const hValues = {{ hours_values | tojson | safe }};
+  const dLabels = {{ days_labels  | tojson | safe }};
+  const dValues = {{ days_values  | tojson | safe }};
+
+  // Chart 1: OK vs NG
+  new Chart(document.getElementById('chart-okng'), {
+    type: 'bar',
+    data: {
+      labels: ['OK', 'NG'],
+      datasets: [{ label: 'Số lượng', data: [okCnt, ngCnt] }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, precision: 0 } }
+    }
+  });
+
+  // Chart 2: số lượng kiểm tra theo giờ (hôm nay)
+  new Chart(document.getElementById('chart-today'), {
+    type: 'bar',
+    data: {
+      labels: hLabels,
+      datasets: [{ label: 'Lượt kiểm tra (hôm nay)', data: hValues }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, precision: 0 } }
+    }
+  });
+
+  // Chart 3: số lượng bài đo theo ngày (14 ngày)
+  new Chart(document.getElementById('chart-daily'), {
+    type: 'line',
+    data: {
+      labels: dLabels,
+      datasets: [{ label: 'Bài đo/ngày', data: dValues, tension: 0.25, fill: false }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, precision: 0 } }
+    }
+  });
+})();
+</script>
+{% endblock %}
