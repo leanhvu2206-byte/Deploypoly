@@ -434,10 +434,12 @@
         }
       </style>
 
-      {# Macro hiển thị chip cho ID/OD1/OD2 #}
+      {# Macro hiển thị chip cho ID/OD1/OD2 — đã sửa để nhận cả True/False lẫn 1/0 #}
       {% macro dim_chip(name, size, tol, actual, verdict) -%}
         {%- set v = verdict -%}
-        <span class="chip {{ v==1 and 'chip--pass' or (v==0 and 'chip--fail' or '') }}">
+        {%- set is_pass = (v is boolean and v) or (v == 1) -%}
+        {%- set is_fail = (v is boolean and (not v)) or (v == 0) -%}
+        <span class="chip {{ is_pass and 'chip--pass' or (is_fail and 'chip--fail' or '') }}">
           <span class="chip__name">{{ name }}</span>
           <span class="chip__dim">
             {{ size is not none and size or '—' }}
@@ -445,7 +447,7 @@
           </span>
           <span class="chip__actual">Actual: {{ actual is not none and actual or '—' }}</span>
           {% if v is not none %}
-            <span class="chip__badge">{{ v==1 and 'PASS' or 'FAIL' }}</span>
+            <span class="chip__badge">{{ is_pass and 'PASS' or (is_fail and 'FAIL' or '') }}</span>
           {% endif %}
         </span>
       {%- endmacro %}
@@ -509,9 +511,9 @@
         </table>
       </div>
 
-      <!-- JSON spec -->
+      <!-- JSON spec: đổi sang tojson để luôn hợp lệ với JSONB/dict -->
       <script id="spec-json" type="application/json">
-{{ (latest.extra_checks or 'null') | safe }}
+{{ (latest.extra_checks or None) | tojson }}
       </script>
 
       <!-- JSON prefill actuals từ server -->

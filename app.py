@@ -1,125 +1,134 @@
 from flask import Flask, render_template, request, redirect, url_for, session, send_file, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-import sqlite3, os, csv, io, json
+import os, csv, io, json
 from datetime import datetime, timedelta, timezone
+import psycopg
+from psycopg.rows import dict_row
 
-# ---------------------- Config ----------------------
+# ===================== Config =====================
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "change-this-secret-in-production"
-DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
 
-# ---------------------- DB Helpers ----------------------
+# Lấy URL Postgres từ biến môi trường
+DATABASE_URL = os.getenv("DATABASE_URL")  # postgresql://... ?sslmode=require
+
+# Timezone VN
+TZ_VN = timezone(timedelta(hours=7))
+
+
+# ===================== DB Helpers =====================
 def get_db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+    """Kết nối Postgres, mỗi lần dùng đóng ngay (context manager)."""
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
-def ensure_column(cur, table, column, type_sql):
-    cur.execute(f"PRAGMA table_info({table})")
-    cols = [r[1] for r in cur.fetchall()]
-    if column not in cols:
-        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {type_sql}")
 
 def init_db():
-    con = get_db()
-    cur = con.cursor()
-    # Users
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    ''')
-    # Measurements (bảng ban đầu)
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS measurements (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            value REAL NOT NULL,
-            created_at TEXT NOT NULL,
-            created_by INTEGER,
-            FOREIGN KEY(created_by) REFERENCES users(id)
-        )
-    ''')
+    """Tạo schema nếu chưa có + seed user admin."""
+    ddl = """
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
-    # Specs
-    ensure_column(cur, "measurements", "item_code", "TEXT")
-    ensure_column(cur, "measurements", "id_size", "REAL")
-    ensure_column(cur, "measurements", "id_tol", "TEXT")
-    ensure_column(cur, "measurements", "od1_size", "REAL")
-    ensure_column(cur, "measurements", "od1_tol", "TEXT")
-    ensure_column(cur, "measurements", "od2_size", "REAL")
-    ensure_column(cur, "measurements", "od2_tol", "TEXT")
-    ensure_column(cur, "measurements", "measured_by", "TEXT")
-    ensure_column(cur, "measurements", "area", "TEXT")
-    ensure_column(cur, "measurements", "note", "TEXT")
+    CREATE TABLE IF NOT EXISTS measurements (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        value DOUBLE PRECISION NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_by INTEGER REFERENCES users(id),
 
-    # Extra checks + actuals + verdicts
-    ensure_column(cur, "measurements", "extra_checks", "TEXT")
-    ensure_column(cur, "measurements", "actual_id", "REAL")
-    ensure_column(cur, "measurements", "actual_od1", "REAL")
-    ensure_column(cur, "measurements", "actual_od2", "REAL")
-    ensure_column(cur, "measurements", "verdict_id", "INTEGER")
-    ensure_column(cur, "measurements", "verdict_od1", "INTEGER")
-    ensure_column(cur, "measurements", "verdict_od2", "INTEGER")
-    ensure_column(cur, "measurements", "verdict_overall", "INTEGER")
+        item_code TEXT,
+        id_size DOUBLE PRECISION,
+        id_tol TEXT,
+        od1_size DOUBLE PRECISION,
+        od1_tol TEXT,
+        od2_size DOUBLE PRECISION,
+        od2_tol TEXT,
+        measured_by TEXT,
+        area TEXT,
+        note TEXT,
 
-    # (Khuyến nghị) Index cho hiệu năng
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_measurements_item_code ON measurements(item_code)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_measurements_created_at_date ON measurements(substr(created_at,1,10))")
+        extra_checks JSONB,
+        actual_id DOUBLE PRECISION,
+        actual_od1 DOUBLE PRECISION,
+        actual_od2 DOUBLE PRECISION,
+        verdict_id BOOLEAN,
+        verdict_od1 BOOLEAN,
+        verdict_od2 BOOLEAN,
+        verdict_overall BOOLEAN
+    );
 
-    con.commit()
+    CREATE INDEX IF NOT EXISTS idx_measurements_item_code ON measurements(item_code);
+    -- Index ngày theo múi giờ VN để nhóm/ngày nhanh
+    CREATE INDEX IF NOT EXISTS idx_measurements_created_at_vn_date
+      ON measurements ( ((created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) );
+    """
+    with get_db() as con, con.cursor() as cur:
+        cur.execute(ddl)
+        cur.execute("SELECT id FROM users WHERE username = %s", ("admin",))
+        if cur.fetchone() is None:
+            cur.execute(
+                "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+                ("admin", generate_password_hash("admin123")),
+            )
 
-    # Seed default user
-    cur.execute("SELECT id FROM users WHERE username = ?", ("admin",))
-    if not cur.fetchone():
-        cur.execute(
-            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-            ("admin", generate_password_hash("admin123"), datetime.now(timezone.utc).isoformat())
-        )
-        con.commit()
-    con.close()
 
+init_db()
+
+
+# ===================== Template Filters =====================
 @app.template_filter("fmt_dt")
 def fmt_dt(value):
+    """Hiển thị datetime theo Asia/Ho_Chi_Minh."""
     if not value:
         return ""
     try:
-        v = str(value).replace("Z", "+00:00")
-        dt = datetime.fromisoformat(v)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(value, str):
+            # hỗ trợ cả chuỗi ISO (fallback)
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return value.astimezone(TZ_VN).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
-        return value
+        return str(value)
+
+
+# ---- Các filter xử lý JSON extra_checks: chấp nhận dict hoặc str ----
+def _ec_to_obj(extra_checks):
+    if extra_checks is None:
+        return None
+    if isinstance(extra_checks, (dict, list)):
+        return extra_checks
+    try:
+        return json.loads(extra_checks)
+    except Exception:
+        return None
+
 
 @app.template_filter("extract_extra_summary")
 def extract_extra_summary(extra_checks_str):
     """Hiển thị các hạng mục bổ sung, KHÔNG hiển thị PASS/FAIL riêng."""
-    import json
-    try:
-        data = json.loads(extra_checks_str or "null")
-    except Exception:
+    data = _ec_to_obj(extra_checks_str)
+    if data is None:
         return ""
     spec_list = []
     if isinstance(data, dict) and "spec" in data:
-        spec_list = data["spec"]
+        spec_list = data.get("spec") or []
     elif isinstance(data, list):
         spec_list = data
+
+    actual_map = {}
+    if isinstance(data, dict) and "actuals" in data:
+        actual_map = { (a.get("name") or "").strip(): a.get("actual") for a in (data.get("actuals") or []) }
+
     html = '<div class="extras">'
     for sp in spec_list:
-        name = sp.get("name", "")
+        name = (sp.get("name") or "").strip()
         nom = sp.get("nominal", "")
         tp = sp.get("tol_plus", "")
         tm = sp.get("tol_minus", "")
-        actual = None
-        # Lấy actual nếu có
-        if isinstance(data, dict) and "actuals" in data:
-            for a in data["actuals"]:
-                if a.get("name") == name:
-                    actual = a.get("actual")
-                    break
+        actual = actual_map.get(name)
         html += f"""
         <span class="chip chip--none">
           <span class="chip__name">{name}</span>
@@ -130,6 +139,7 @@ def extract_extra_summary(extra_checks_str):
     html += "</div>"
     return html
 
+
 @app.template_filter("extract_extra_results")
 def extract_extra_results(extra_checks_str):
     """
@@ -137,18 +147,28 @@ def extract_extra_results(extra_checks_str):
     Ưu tiên dùng extra_checks.verdict_items (đã tính sẵn).
     Nếu không có, sẽ tự tính từ spec + actuals.
     """
-    try:
-        obj = json.loads(extra_checks_str or "null")
-    except Exception:
-        obj = None
+    data = _ec_to_obj(extra_checks_str)
+
+    def to_float(v, d=None):
+        try:
+            return float(v)
+        except Exception:
+            return d
+
+    def judge(actual, nominal, tol_plus, tol_minus):
+        if nominal is None:
+            return None
+        low = nominal - (tol_minus or 0.0)
+        up  = nominal + (tol_plus  or 0.0)
+        if actual is None:
+            return None
+        return (low <= actual <= up)
 
     out = []
-
-    if isinstance(obj, dict):
-        # 1) đã có kết quả chấm sẵn
-        verdict_items = obj.get("verdict_items")
-        if isinstance(verdict_items, list):
-            for it in verdict_items:
+    if isinstance(data, dict):
+        vitems = data.get("verdict_items")
+        if isinstance(vitems, list):
+            for it in vitems:
                 out.append({
                     "name": (it.get("name") or "").strip(),
                     "actual": it.get("actual"),
@@ -156,53 +176,37 @@ def extract_extra_results(extra_checks_str):
                 })
             return out
 
-        # 2) tự tính từ spec + actuals
-        spec = obj.get("spec") or []
-        actuals = obj.get("actuals") or []
-        actual_map = {(a.get("name") or "").strip(): a.get("actual") for a in actuals}
-
+        spec = data.get("spec") or []
+        actuals = data.get("actuals") or []
+        amap = {(a.get("name") or "").strip(): a.get("actual") for a in actuals}
         for sp in spec:
             name = (sp.get("name") or "").strip()
             nominal = to_float(sp.get("nominal"))
-            tol_plus = to_float(sp.get("tol_plus"), 0.0)
-            tol_minus = to_float(sp.get("tol_minus"), 0.0)
-            actual = to_float(actual_map.get(name))
-            v, _, _ = judge(actual, nominal, tol_plus, tol_minus)
+            tp = to_float(sp.get("tol_plus"), 0.0)
+            tm = to_float(sp.get("tol_minus"), 0.0)
+            actual = to_float(amap.get(name))
+            v = judge(actual, nominal, tp, tm)
             out.append({"name": name, "actual": actual, "pass": v})
+        return out
 
-    elif isinstance(obj, list):
-        # fallback: chỉ có danh sách spec
-        for sp in obj:
-            out.append({
-                "name": (sp.get("name") or "").strip(),
-                "actual": None,
-                "pass": None
-            })
-
+    if isinstance(data, list):
+        for sp in data:
+            out.append({"name": (sp.get("name") or "").strip(), "actual": None, "pass": None})
     return out
+
 
 @app.template_filter("render_extras")
 def render_extras(extra_checks_str: str) -> str:
-    """
-    Trả về HTML cho cột Extras:
-    - Mỗi hạng mục là 1 'chip'
-    - Hiển thị: Tên | nominal (+tol/-tol) | Actual | PASS/FAIL màu
-    """
-    import html
+    """Trả về HTML cho cột Extras: mỗi hạng mục là chip + PASS/FAIL."""
+    import html as _html
 
-    try:
-        obj = json.loads(extra_checks_str or "null")
-    except Exception:
-        obj = None
-
+    obj = _ec_to_obj(extra_checks_str)
     items = []
     if isinstance(obj, dict):
-        # Ưu tiên 'verdict_items' (đã có PASS/FAIL + actuals)
         vitems = obj.get("verdict_items")
         if isinstance(vitems, list) and vitems:
             items = vitems
         else:
-            # Nếu là specs gốc hoặc bản KQ chưa kết án -> ghép spec + actuals
             spec = obj.get("spec") or []
             actuals = obj.get("actuals") or []
             amap = {(a.get("name") or "").strip(): a.get("actual") for a in actuals}
@@ -218,13 +222,12 @@ def render_extras(extra_checks_str: str) -> str:
                     "actual": amap.get(name),
                     "pass": None
                 })
-
     if not items:
         return '<span class="text-muted">—</span>'
 
     def fmt_esc(x):
         s = "—" if x is None else str(x)
-        return html.escape(s)
+        return _html.escape(s)
 
     chips = []
     for it in items:
@@ -235,20 +238,17 @@ def render_extras(extra_checks_str: str) -> str:
         actual   = it.get("actual")
         p        = it.get("pass")  # True/False/None
 
-        # Nhãn PASS/FAIL + màu
         verdict_cls = "chip--none"
         verdict_txt = ""
         if p is True:
-            verdict_cls = "chip--pass"
-            verdict_txt = "PASS"
+            verdict_cls = "chip--pass"; verdict_txt = "PASS"
         elif p is False:
-            verdict_cls = "chip--fail"
-            verdict_txt = "FAIL"
+            verdict_cls = "chip--fail"; verdict_txt = "FAIL"
 
         chips.append(
             f'''
             <div class="chip {verdict_cls}">
-              <span class="chip__name">{html.escape(str(name))}</span>
+              <span class="chip__name">{_html.escape(str(name))}</span>
               <span class="chip__dim"> {fmt_esc(nominal)}
                 <span class="chip__tol">(+{fmt_esc(tp)}/ -{fmt_esc(tm)})</span>
               </span>
@@ -257,23 +257,13 @@ def render_extras(extra_checks_str: str) -> str:
             </div>
             '''.strip()
         )
-
     return '<div class="extras chips">'+ "".join(chips) + '</div>'
+
 
 @app.template_filter("extract_extra_actuals")
 def extract_extra_actuals(extra_checks_str):
-    """
-    Trả về list [{"name": "...", "actual": ...}, ...] từ cột extra_checks.
-    Hỗ trợ cả 2 dạng:
-    - {"spec": [...], "actuals": [...]}  (dạng mới khi lưu kết quả)
-    - [ ... ]                            (dạng cũ, nếu có)
-    """
-    try:
-        data = json.loads(extra_checks_str or "null")
-    except Exception:
-        return []
-
-    # Xác định mảng actuals
+    """Trả về list [{"name": "...", "actual": ...}] từ cột extra_checks (dict/str)."""
+    data = _ec_to_obj(extra_checks_str)
     if isinstance(data, dict):
         actuals = data.get("actuals") or []
     elif isinstance(data, list):
@@ -291,17 +281,16 @@ def extract_extra_actuals(extra_checks_str):
             out.append({"name": name, "actual": actual})
     return out
 
-# ---------------------- Utilities ----------------------
+
+# ===================== Utilities (business) =====================
 def current_user():
     uid = session.get("user_id")
     if not uid:
         return None
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM users WHERE id = ?", (uid,))
-    row = cur.fetchone()
-    con.close()
-    return row
+    with get_db() as con, con.cursor() as cur:
+        cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
+        return cur.fetchone()
+
 
 def login_required(view):
     @wraps(view)
@@ -311,11 +300,13 @@ def login_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+
 def to_float(val, default=None):
     try:
         return float(val)
     except (TypeError, ValueError):
         return default
+
 
 def parse_tol(tol_str):
     """±0.02 | +0.02/-0.01 | +0.02 | -0.02 | 0.02 -> (plus, minus)"""
@@ -338,6 +329,7 @@ def parse_tol(tol_str):
             v = to_float(s, 0.0); plus = minus = v
     return plus or 0.0, minus or 0.0
 
+
 def judge(actual, nominal, tol_plus, tol_minus):
     if nominal is None:
         return None, None, None
@@ -346,6 +338,7 @@ def judge(actual, nominal, tol_plus, tol_minus):
     if actual is None:
         return None, lower, upper
     return (lower <= actual <= upper), lower, upper
+
 
 def judge_extra_checks(spec_list, actual_list):
     """spec_list: [{name, nominal, tol_plus, tol_minus}] ; actual_list: [{name, actual}]"""
@@ -368,23 +361,36 @@ def judge_extra_checks(spec_list, actual_list):
     overall = (all(judgements) if judgements else None)
     return results, overall
 
-# ---------------------- Routes ----------------------
+
+def _parse_dt_local(s):
+    """Parse 'YYYY-MM-DDTHH:MM' từ input datetime-local (không timezone) -> Asia/Ho_Chi_Minh."""
+    if not s:
+        return None
+    try:
+        d = datetime.fromisoformat(s)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=TZ_VN)
+        return d
+    except Exception:
+        return None
+
+
+# ===================== Routes =====================
 @app.route("/")
 def index():
     if current_user():
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        con = get_db()
-        cur = con.cursor()
-        cur.execute("SELECT * FROM users WHERE username = ?", (username,))
-        user = cur.fetchone()
-        con.close()
+        with get_db() as con, con.cursor() as cur:
+            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cur.fetchone()
         if user and check_password_hash(user["password_hash"], password):
             session["user_id"] = user["id"]
             session["username"] = user["username"]
@@ -392,72 +398,75 @@ def login():
         flash("Sai tài khoản hoặc mật khẩu.", "danger")
     return render_template("login.html")
 
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    con = get_db()
-    cur = con.cursor()
+    with get_db() as con, con.cursor() as cur:
+        # Tổng/AVG
+        cur.execute("SELECT COUNT(*) AS cnt FROM measurements")
+        total = cur.fetchone()["cnt"]
+        cur.execute("SELECT AVG(value) AS avg_val FROM measurements")
+        avg_val = cur.fetchone()["avg_val"]
 
-    cur.execute("SELECT COUNT(*) AS cnt FROM measurements")
-    total = cur.fetchone()["cnt"]
-    cur.execute("SELECT AVG(value) AS avg_val FROM measurements")
-    avg_val = cur.fetchone()["avg_val"]
-    cur.execute("""
-        SELECT id, item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-               actual_id, actual_od1, actual_od2, measured_by, area, note, verdict_overall, created_at
-        FROM measurements
-        ORDER BY created_at DESC LIMIT 5
-    """)
-    recent = cur.fetchall()
+        # 5 gần nhất
+        cur.execute("""
+            SELECT id, item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                   actual_id, actual_od1, actual_od2, measured_by, area, note, verdict_overall, created_at
+            FROM measurements
+            ORDER BY created_at DESC
+            LIMIT 5
+        """)
+        recent = cur.fetchall()
 
-    # OK/NG
-    cur.execute("""
-        SELECT
-          SUM(CASE WHEN verdict_overall = 1 THEN 1 ELSE 0 END) AS ok_cnt,
-          SUM(CASE WHEN verdict_overall = 0 THEN 1 ELSE 0 END) AS ng_cnt
-        FROM measurements
-        WHERE verdict_overall IS NOT NULL
-    """)
-    row = cur.fetchone()
-    ok_cnt = row["ok_cnt"] or 0
-    ng_cnt = row["ng_cnt"] or 0
+        # OK/NG
+        cur.execute("""
+            SELECT
+              SUM(CASE WHEN verdict_overall = TRUE THEN 1 ELSE 0 END) AS ok_cnt,
+              SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng_cnt
+            FROM measurements
+            WHERE verdict_overall IS NOT NULL
+        """)
+        row = cur.fetchone()
+        ok_cnt = row["ok_cnt"] or 0
+        ng_cnt = row["ng_cnt"] or 0
 
-    # By hour today (dùng substr/replace do created_at là ISO có T và offset)
-    by_hour = {f"{h:02d}": 0 for h in range(24)}
-    cur.execute("""
-        SELECT strftime('%H', replace(substr(created_at, 1, 19), 'T', ' ')) AS hh, COUNT(*) AS c
-        FROM measurements
-        WHERE substr(created_at, 1, 10) = date('now')
-        GROUP BY hh ORDER BY hh
-    """)
-    for r in cur.fetchall():
-        if r["hh"] is not None:
-            by_hour[r["hh"]] = r["c"]
-    hours_labels = list(by_hour.keys())
-    hours_values = list(by_hour.values())
+        # By hour hôm nay theo Asia/Ho_Chi_Minh
+        by_hour = {f"{h:02d}": 0 for h in range(24)}
+        cur.execute("""
+            SELECT TO_CHAR(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24') AS hh, COUNT(*) AS c
+            FROM measurements
+            WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = CURRENT_DATE
+            GROUP BY hh ORDER BY hh
+        """)
+        for r in cur.fetchall():
+            if r["hh"] is not None:
+                by_hour[r["hh"]] = r["c"]
+        hours_labels = list(by_hour.keys())
+        hours_values = list(by_hour.values())
 
-    # 14 days (UTC)
-    cur.execute("""
-        SELECT substr(created_at,1,10) AS d, COUNT(*) AS c
-        FROM measurements
-        WHERE substr(created_at,1,10) >= date('now','-13 days')
-        GROUP BY d ORDER BY d
-    """)
-    got = {r["d"]: r["c"] for r in cur.fetchall()}
-    today = datetime.utcnow().date()
-    days_labels, days_values = [], []
-    for i in range(13, -1, -1):
-        d = today - timedelta(days=i)
-        ds = d.isoformat()
-        days_labels.append(ds)
-        days_values.append(got.get(ds, 0))
+        # 14 ngày gần nhất (Asia/Ho_Chi_Minh)
+        cur.execute("""
+            SELECT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d, COUNT(*) AS c
+            FROM measurements
+            WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= CURRENT_DATE - INTERVAL '13 days'
+            GROUP BY d ORDER BY d
+        """)
+        got = {r["d"].isoformat(): r["c"] for r in cur.fetchall()}
+        today = datetime.now(TZ_VN).date()
+        days_labels, days_values = [], []
+        for i in range(13, -1, -1):
+            d = today - timedelta(days=i)
+            ds = d.isoformat()
+            days_labels.append(ds)
+            days_values.append(got.get(ds, 0))
 
-    con.close()
     return render_template(
         "dashboard.html",
         total=total, avg_val=avg_val, recent=recent,
@@ -466,42 +475,45 @@ def dashboard():
         days_labels=days_labels, days_values=days_values
     )
 
+
 @app.route("/measurements")
 @login_required
 def list_measurements():
     q = request.args.get("q", "").strip()
-    con = get_db()
-    cur = con.cursor()
-    if q:
-        cur.execute("""
-            SELECT * FROM measurements
-            WHERE (title LIKE ? OR item_code LIKE ?)
-            ORDER BY created_at DESC
-        """, (f"%{q}%", f"%{q}%"))
-    else:
-        cur.execute("SELECT * FROM measurements ORDER BY created_at DESC")
-    rows = cur.fetchall()
-    con.close()
+    with get_db() as con, con.cursor() as cur:
+        if q:
+            cur.execute("""
+                SELECT * FROM measurements
+                WHERE (title ILIKE %s OR item_code ILIKE %s)
+                ORDER BY created_at DESC
+            """, (f"%{q}%", f"%{q}%"))
+        else:
+            cur.execute("SELECT * FROM measurements ORDER BY created_at DESC")
+        rows = cur.fetchall()
     return render_template("measurements.html", rows=rows, q=q)
+
 
 @app.route("/measurements/history")
 @login_required
 def history():
     start = request.args.get("start")
     end   = request.args.get("end")
-    con = get_db()
-    cur = con.cursor()
+    start_dt = _parse_dt_local(start)
+    end_dt   = _parse_dt_local(end)
+
     query = "SELECT * FROM measurements WHERE 1=1"
     params = []
-    if start:
-        query += " AND created_at >= ?"; params.append(start)
-    if end:
-        query += " AND created_at <= ?"; params.append(end)
+    if start_dt:
+        query += " AND created_at >= %s"; params.append(start_dt)
+    if end_dt:
+        query += " AND created_at <= %s"; params.append(end_dt)
     query += " ORDER BY created_at DESC"
-    cur.execute(query, tuple(params))
-    rows = cur.fetchall()
-    con.close()
+
+    with get_db() as con, con.cursor() as cur:
+        cur.execute(query, tuple(params))
+        rows = cur.fetchall()
     return render_template("history.html", rows=rows, start=start, end=end)
+
 
 # ---------- ĐO HÀNG: thiết lập specs + phán định tự động ----------
 @app.route("/measurements/inspect", methods=["GET", "POST"])
@@ -510,200 +522,79 @@ def inspect_measure():
     item_code   = (request.values.get("item_code") or "").strip()
     action_init = request.form.get("init_specs") == "on"
 
-    con = get_db()
-    cur = con.cursor()
     rows, latest = [], None
     missing_fields = []
 
-    # 1) Có mã hàng -> lấy lịch sử
-    if item_code:
-        cur.execute("SELECT * FROM measurements WHERE item_code = ? ORDER BY created_at DESC", (item_code,))
-        rows = cur.fetchall()
-        latest = rows[0] if rows else None
+    with get_db() as con, con.cursor() as cur:
+        # 1) Có mã hàng -> lấy lịch sử
+        if item_code:
+            cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
+            rows = cur.fetchall()
+            latest = rows[0] if rows else None
 
-        # 1b) Thêm/cập nhật hạng mục bổ sung (cập nhật baseline)
-        if request.method == "POST" and request.form.get("add_extra") == "on" and latest:
-            try:
-                ej = json.loads(latest["extra_checks"] or "null")
+            # 1b) Thêm/cập nhật hạng mục bổ sung (cập nhật baseline)
+            if request.method == "POST" and request.form.get("add_extra") == "on" and latest:
+                ej = _ec_to_obj(latest["extra_checks"])
                 cur_spec = (ej.get("spec") if isinstance(ej, dict) else ej) or []
+
+                ex_name = (request.form.get("add_extra_name") or "").strip()
+                ex_nom  = to_float(request.form.get("add_extra_nominal"))
+                ex_tol  = (request.form.get("add_extra_tol") or "").strip()
+                if ex_name:
+                    p, m = parse_tol(ex_tol)
+                    found = False
+                    for sp in cur_spec:
+                        if (sp.get("name") or "").strip().lower() == ex_name.lower():
+                            sp["nominal"]   = ex_nom
+                            sp["tol_plus"]  = p
+                            sp["tol_minus"] = m
+                            found = True
+                            break
+                    if not found:
+                        cur_spec.append({"name": ex_name, "nominal": ex_nom, "tol_plus": p, "tol_minus": m})
+
+                    cur.execute("""
+                        INSERT INTO measurements
+                        (title, value, created_at, created_by,
+                         item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                         extra_checks, actual_id, actual_od1, actual_od2,
+                         verdict_id, verdict_od1, verdict_od2, verdict_overall)
+                        VALUES (%s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s,
+                                %s, %s, %s, %s)
+                    """, (
+                        "Cập nhật specs",
+                        latest["id_size"] or 0.0,
+                        datetime.now(TZ_VN),
+                        session.get("user_id"),
+                        item_code,
+                        latest["id_size"], latest["id_tol"],
+                        latest["od1_size"], latest["od1_tol"],
+                        latest["od2_size"], latest["od2_tol"],
+                        {"spec": cur_spec, "history": []},
+                        None, None, None,
+                        None, None, None, None
+                    ))
+                    cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
+                    rows = cur.fetchall()
+                    latest = rows[0] if rows else None
+                    flash(f"Đã thêm/cập nhật hạng mục '{ex_name}' vào specs của {item_code}.", "success")
+
+        # 2) POST tạo specs lần đầu
+        if request.method == "POST" and action_init and item_code and not latest:
+            id_size  = to_float(request.form.get("id_size"))
+            id_tol   = (request.form.get("id_tol") or "").strip()
+            od1_size = to_float(request.form.get("od1_size"))
+            od1_tol  = (request.form.get("od1_tol") or "").strip()
+            od2_size = to_float(request.form.get("od2_size"))
+            od2_tol  = (request.form.get("od2_tol") or "").strip()
+            spec_json_raw = request.form.get("extra_checks_spec", "[]")
+            try:
+                spec_spec = json.loads(spec_json_raw)
             except Exception:
-                cur_spec = []
+                spec_spec = []
 
-            ex_name = (request.form.get("add_extra_name") or "").strip()
-            ex_nom  = to_float(request.form.get("add_extra_nominal"))
-            ex_tol  = (request.form.get("add_extra_tol") or "").strip()
-            if ex_name:
-                p, m = parse_tol(ex_tol)
-                found = False
-                for sp in cur_spec:
-                    if (sp.get("name") or "").strip().lower() == ex_name.lower():
-                        sp["nominal"]   = ex_nom
-                        sp["tol_plus"]  = p
-                        sp["tol_minus"] = m
-                        found = True
-                        break
-                if not found:
-                    cur_spec.append({"name": ex_name, "nominal": ex_nom, "tol_plus": p, "tol_minus": m})
-
-                cur.execute("""
-                    INSERT INTO measurements
-                    (title, value, created_at, created_by,
-                     item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                     extra_checks, actual_id, actual_od1, actual_od2,
-                     verdict_id, verdict_od1, verdict_od2, verdict_overall)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    "Cập nhật specs",
-                    latest["id_size"] or 0.0,
-                    datetime.now(timezone.utc).isoformat(),
-                    session.get("user_id"),
-                    item_code,
-                    latest["id_size"], latest["id_tol"],
-                    latest["od1_size"], latest["od1_tol"],
-                    latest["od2_size"], latest["od2_tol"],
-                    json.dumps({"spec": cur_spec, "history": []}, ensure_ascii=False),
-                    None, None, None,
-                    None, None, None, None
-                ))
-                con.commit()
-
-                cur.execute("SELECT * FROM measurements WHERE item_code = ? ORDER BY created_at DESC", (item_code,))
-                rows = cur.fetchall()
-                latest = rows[0] if rows else None
-                flash(f"Đã thêm/cập nhật hạng mục '{ex_name}' vào specs của {item_code}.", "success")
-
-    # 2) POST tạo specs lần đầu
-    if request.method == "POST" and action_init and item_code and not latest:
-        id_size  = to_float(request.form.get("id_size"))
-        id_tol   = (request.form.get("id_tol") or "").strip()
-        od1_size = to_float(request.form.get("od1_size"))
-        od1_tol  = (request.form.get("od1_tol") or "").strip()
-        od2_size = to_float(request.form.get("od2_size"))
-        od2_tol  = (request.form.get("od2_tol") or "").strip()
-        spec_json_raw = request.form.get("extra_checks_spec", "[]")
-        try:
-            spec_spec = json.loads(spec_json_raw)
-        except Exception:
-            spec_spec = []
-
-        cur.execute("""
-            INSERT INTO measurements
-            (title, value, created_at, created_by,
-             item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-             extra_checks, actual_id, actual_od1, actual_od2,
-             verdict_id, verdict_od1, verdict_od2, verdict_overall,
-             measured_by, area, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "Thiết lập specs",
-            id_size or 0.0,
-            datetime.now(timezone.utc).isoformat(),
-            session.get("user_id"),
-            item_code,
-            id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-            json.dumps({"spec": spec_spec, "history": []}, ensure_ascii=False),
-            None, None, None,
-            None, None, None, None,
-            None, None, None  # measured_by, area, note
-        ))
-        con.commit()
-
-        cur.execute("SELECT * FROM measurements WHERE item_code = ? ORDER BY created_at DESC", (item_code,))
-        rows = cur.fetchall()
-        latest = rows[0] if rows else None
-        flash("Đã thiết lập specs ban đầu cho mã hàng.", "success")
-
-    # 3) Phán định + tự lưu khi đủ số liệu
-    verdict = {"id": None, "od1": None, "od2": None, "overall": None,
-               "ranges": {"id": (None, None), "od1": (None, None), "od2": (None, None)}}
-
-    actual_id  = to_float(request.values.get("actual_id"))
-    actual_od1 = to_float(request.values.get("actual_od1"))
-    actual_od2 = to_float(request.values.get("actual_od2"))
-    measured_by  = (request.values.get("measured_by") or session.get("username") or "").strip()
-    measure_area = (request.values.get("measure_area") or "").strip()
-    note         = (request.values.get("note") or "").strip()
-
-    extra_checks_actual_raw = request.values.get("extra_checks_actual", "[]")
-    try:
-        extra_checks_actual = json.loads(extra_checks_actual_raw)
-    except Exception:
-        extra_checks_actual = []
-
-    if item_code and latest:
-        id_plus,  id_minus  = parse_tol(latest["id_tol"])  if latest["id_tol"]  is not None else (0.0, 0.0)
-        od1_plus, od1_minus = parse_tol(latest["od1_tol"]) if latest["od1_tol"] is not None else (0.0, 0.0)
-        od2_plus, od2_minus = parse_tol(latest["od2_tol"]) if latest["od2_tol"] is not None else (0.0, 0.0)
-
-        v_id,  id_low,  id_up  = judge(actual_id,  latest["id_size"],  id_plus,  id_minus)
-        v_od1, od1_low, od1_up = judge(actual_od1, latest["od1_size"], od1_plus, od1_minus)
-        v_od2, od2_low, od2_up = judge(actual_od2, latest["od2_size"], od2_plus, od2_minus)
-
-        verdict["id"], verdict["od1"], verdict["od2"] = v_id, v_od1, v_od2
-        verdict["ranges"]["id"], verdict["ranges"]["od1"], verdict["ranges"]["od2"] = (id_low, id_up), (od1_low, od1_up), (od2_low, od2_up)
-
-        # Chuẩn hoá spec cho extra
-        extra_spec = []
-        try:
-            ej = json.loads(latest["extra_checks"] or "null")
-            if isinstance(ej, dict) and "spec" in ej: extra_spec = ej.get("spec") or []
-            elif isinstance(ej, list):               extra_spec = ej
-        except Exception:
-            extra_spec = []
-
-        norm_spec = []
-        for sp in extra_spec:
-            name = (sp.get("name") or "").strip()
-            nominal = to_float(sp.get("nominal"))
-            tp, tm = sp.get("tol_plus"), sp.get("tol_minus")
-            if isinstance(tp, str) or isinstance(tm, str):
-                if isinstance(tp, str) and tp and not tm:
-                    p, m = parse_tol(tp); tp, tm = p, m
-                elif isinstance(tm, str) and tm and not tp:
-                    p, m = parse_tol(tm); tp, tm = p, m
-                else:
-                    tp, tm = to_float(tp, 0.0), to_float(tm, 0.0)
-            norm_spec.append({"name": name, "nominal": nominal,
-                              "tol_plus": to_float(tp, 0.0), "tol_minus": to_float(tm, 0.0)})
-
-        extra_with_verdict, extra_overall = judge_extra_checks(norm_spec, extra_checks_actual)
-
-        # ---- BẮT BUỘC NHẬP ĐỦ TẤT CẢ ACTUAL MỚI PHÁN ĐỊNH ----
-        missing = []
-
-        # 3 kích thước chính
-        need_id  = latest["id_size"]  is not None
-        need_od1 = latest["od1_size"] is not None
-        need_od2 = latest["od2_size"] is not None
-
-        if need_id  and actual_id  is None: missing.append("Actual ID")
-        if need_od1 and actual_od1 is None: missing.append("Actual OD1")
-        if need_od2 and actual_od2 is None: missing.append("Actual OD2")
-
-        # Hạng mục bổ sung
-        actual_map = { (a.get("name") or "").strip(): to_float(a.get("actual")) for a in (extra_checks_actual or []) }
-        for sp in norm_spec:
-            nm = (sp.get("name") or "").strip()
-            nominal = to_float(sp.get("nominal"))
-            if nominal is not None and to_float(actual_map.get(nm)) is None:
-                missing.append(f"Actual {nm}")
-
-        all_present = (len(missing) == 0)
-
-        # ✅ Nếu đủ dữ liệu: phán định tổng thể
-        if all_present:
-            checks_main = [v for v in (v_id, v_od1, v_od2) if v is not None]
-            for it in (extra_with_verdict or []):
-                if it.get("pass") is not None:
-                    checks_main.append(bool(it.get("pass")))
-            verdict["overall"] = (all(checks_main) if checks_main else None)
-        else:
-            verdict["overall"] = None  # chưa đủ dữ liệu => chưa phán định
-
-        missing_fields = missing
-
-        # Tự lưu khi đủ dữ liệu
-        if request.method in ("GET", "POST") and all_present:
             cur.execute("""
                 INSERT INTO measurements
                 (title, value, created_at, created_by,
@@ -711,34 +602,154 @@ def inspect_measure():
                  extra_checks, actual_id, actual_od1, actual_od2,
                  verdict_id, verdict_od1, verdict_od2, verdict_overall,
                  measured_by, area, note)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s)
             """, (
-                f"KQ đo {item_code}",
-                latest["id_size"] or 0.0,
-                datetime.now(timezone.utc).isoformat(),
+                "Thiết lập specs",
+                id_size or 0.0,
+                datetime.now(TZ_VN),
                 session.get("user_id"),
                 item_code,
-                latest["id_size"], latest["id_tol"],
-                latest["od1_size"], latest["od1_tol"],
-                latest["od2_size"], latest["od2_tol"],
-                json.dumps({
-                    "spec": norm_spec,
-                    "actuals": extra_checks_actual,
-                    "verdict_items": extra_with_verdict
-                }, ensure_ascii=False),
-                actual_id, actual_od1, actual_od2,
-                int(v_id)  if v_id  is not None else None,
-                int(v_od1) if v_od1 is not None else None,
-                int(v_od2) if v_od2 is not None else None,
-                int(verdict["overall"]) if verdict["overall"] is not None else None,
-                measured_by or None, measure_area or None, note or None
+                id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                {"spec": spec_spec, "history": []},
+                None, None, None,
+                None, None, None, None,
+                None, None, None  # measured_by, area, note
             ))
-            con.commit()
-            cur.execute("SELECT * FROM measurements WHERE item_code = ? ORDER BY created_at DESC", (item_code,))
+            cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
             rows = cur.fetchall()
             latest = rows[0] if rows else None
+            flash("Đã thiết lập specs ban đầu cho mã hàng.", "success")
 
-    con.close()
+        # 3) Phán định + tự lưu khi đủ số liệu
+        verdict = {"id": None, "od1": None, "od2": None, "overall": None,
+                   "ranges": {"id": (None, None), "od1": (None, None), "od2": (None, None)}}
+
+        actual_id  = to_float(request.values.get("actual_id"))
+        actual_od1 = to_float(request.values.get("actual_od1"))
+        actual_od2 = to_float(request.values.get("actual_od2"))
+        measured_by  = (request.values.get("measured_by") or session.get("username") or "").strip()
+        measure_area = (request.values.get("measure_area") or "").strip()
+        note         = (request.values.get("note") or "").strip()
+
+        extra_checks_actual_raw = request.values.get("extra_checks_actual", "[]")
+        try:
+            extra_checks_actual = json.loads(extra_checks_actual_raw)
+        except Exception:
+            extra_checks_actual = []
+
+        if item_code and latest:
+            id_plus,  id_minus  = parse_tol(latest["id_tol"])  if latest["id_tol"]  is not None else (0.0, 0.0)
+            od1_plus, od1_minus = parse_tol(latest["od1_tol"]) if latest["od1_tol"] is not None else (0.0, 0.0)
+            od2_plus, od2_minus = parse_tol(latest["od2_tol"]) if latest["od2_tol"] is not None else (0.0, 0.0)
+
+            v_id,  id_low,  id_up  = judge(actual_id,  latest["id_size"],  id_plus,  id_minus)
+            v_od1, od1_low, od1_up = judge(actual_od1, latest["od1_size"], od1_plus, od1_minus)
+            v_od2, od2_low, od2_up = judge(actual_od2, latest["od2_size"], od2_plus, od2_minus)
+
+            verdict["id"], verdict["od1"], verdict["od2"] = v_id, v_od1, v_od2
+            verdict["ranges"]["id"], verdict["ranges"]["od1"], verdict["ranges"]["od2"] = (id_low, id_up), (od1_low, od1_up), (od2_low, od2_up)
+
+            # Chuẩn hoá spec cho extra
+            extra_spec = []
+            ej = _ec_to_obj(latest["extra_checks"])
+            if isinstance(ej, dict) and "spec" in ej:
+                extra_spec = ej.get("spec") or []
+            elif isinstance(ej, list):
+                extra_spec = ej
+
+            norm_spec = []
+            for sp in extra_spec:
+                name = (sp.get("name") or "").strip()
+                nominal = to_float(sp.get("nominal"))
+                tp, tm = sp.get("tol_plus"), sp.get("tol_minus")
+                if isinstance(tp, str) or isinstance(tm, str):
+                    if isinstance(tp, str) and tp and not tm:
+                        p, m = parse_tol(tp); tp, tm = p, m
+                    elif isinstance(tm, str) and tm and not tp:
+                        p, m = parse_tol(tm); tp, tm = p, m
+                    else:
+                        tp, tm = to_float(tp, 0.0), to_float(tm, 0.0)
+                norm_spec.append({"name": name, "nominal": nominal,
+                                  "tol_plus": to_float(tp, 0.0), "tol_minus": to_float(tm, 0.0)})
+
+            extra_with_verdict, extra_overall = judge_extra_checks(norm_spec, extra_checks_actual)
+
+            # ---- BẮT BUỘC NHẬP ĐỦ TẤT CẢ ACTUAL MỚI PHÁN ĐỊNH ----
+            missing = []
+            need_id  = latest["id_size"]  is not None
+            need_od1 = latest["od1_size"] is not None
+            need_od2 = latest["od2_size"] is not None
+
+            if need_id  and actual_id  is None: missing.append("Actual ID")
+            if need_od1 and actual_od1 is None: missing.append("Actual OD1")
+            if need_od2 and actual_od2 is None: missing.append("Actual OD2")
+
+            actual_map = { (a.get("name") or "").strip(): to_float(a.get("actual")) for a in (extra_checks_actual or []) }
+            for sp in norm_spec:
+                nm = (sp.get("name") or "").strip()
+                nominal = to_float(sp.get("nominal"))
+                if nominal is not None and to_float(actual_map.get(nm)) is None:
+                    missing.append(f"Actual {nm}")
+
+            all_present = (len(missing) == 0)
+
+            # ✅ Phán định tổng thể khi đủ dữ liệu
+            if all_present:
+                checks_main = [v for v in (v_id, v_od1, v_od2) if v is not None]
+                for it in (extra_with_verdict or []):
+                    if it.get("pass") is not None:
+                        checks_main.append(bool(it.get("pass")))
+                verdict["overall"] = (all(checks_main) if checks_main else None)
+            else:
+                verdict["overall"] = None
+
+            missing_fields = missing
+
+            # Tự lưu khi đủ dữ liệu
+            if request.method in ("GET", "POST") and all_present:
+                verdict_id_val  = (bool(v_id)  if v_id  is not None else None)
+                verdict_od1_val = (bool(v_od1) if v_od1 is not None else None)
+                verdict_od2_val = (bool(v_od2) if v_od2 is not None else None)
+                overall_val     = (bool(verdict["overall"]) if verdict["overall"] is not None else None)
+
+                cur.execute("""
+                    INSERT INTO measurements
+                    (title, value, created_at, created_by,
+                     item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                     extra_checks, actual_id, actual_od1, actual_od2,
+                     verdict_id, verdict_od1, verdict_od2, verdict_overall,
+                     measured_by, area, note)
+                    VALUES (%s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s)
+                """, (
+                    f"KQ đo {item_code}",
+                    latest["id_size"] or 0.0,
+                    datetime.now(TZ_VN),
+                    session.get("user_id"),
+                    item_code,
+                    latest["id_size"], latest["id_tol"],
+                    latest["od1_size"], latest["od1_tol"],
+                    latest["od2_size"], latest["od2_tol"],
+                    {
+                        "spec": norm_spec,
+                        "actuals": extra_checks_actual,
+                        "verdict_items": extra_with_verdict
+                    },
+                    actual_id, actual_od1, actual_od2,
+                    verdict_id_val, verdict_od1_val, verdict_od2_val, overall_val,
+                    measured_by or None, measure_area or None, note or None
+                ))
+                cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
+                rows = cur.fetchall()
+                latest = rows[0] if rows else None
+
     return render_template(
         "inspect.html",
         item_code=item_code, rows=rows, latest=latest,
@@ -747,69 +758,65 @@ def inspect_measure():
         missing_fields=missing_fields
     )
 
+
 @app.route("/measurements/delete_extra/<name>", methods=["POST"])
 @login_required
 def delete_extra_check(name):
     item_code = request.args.get("item_code")
     if not item_code or not name:
         return "Missing item_code or name", 400
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM measurements WHERE item_code = ? ORDER BY created_at DESC", (item_code,))
-    latest = cur.fetchone()
-    if not latest:
-        con.close()
-        return "Not found", 404
 
-    try:
-        ej = json.loads(latest["extra_checks"] or "null")
+    with get_db() as con, con.cursor() as cur:
+        cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
+        latest = cur.fetchone()
+        if not latest:
+            return "Not found", 404
+
+        ej = _ec_to_obj(latest["extra_checks"])
         cur_spec = (ej.get("spec") if isinstance(ej, dict) else ej) or []
-    except Exception:
-        cur_spec = []
+        new_spec = [sp for sp in cur_spec if (sp.get("name") or "").strip().lower() != name.lower()]
 
-    new_spec = [sp for sp in cur_spec if (sp.get("name") or "").strip().lower() != name.lower()]
-
-    cur.execute("""
-        INSERT INTO measurements
-        (title, value, created_at, created_by,
-         item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-         extra_checks, actual_id, actual_od1, actual_od2,
-         verdict_id, verdict_od1, verdict_od2, verdict_overall)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        f"Xóa hạng mục {name}",
-        latest["id_size"] or 0.0,
-        datetime.now(timezone.utc).isoformat(),
-        session.get("user_id"),
-        item_code,
-        latest["id_size"], latest["id_tol"],
-        latest["od1_size"], latest["od1_tol"],
-        latest["od2_size"], latest["od2_tol"],
-        json.dumps({"spec": new_spec, "history": []}, ensure_ascii=False),
-        None, None, None,
-        None, None, None, None
-    ))
-    con.commit()
-    con.close()
+        cur.execute("""
+            INSERT INTO measurements
+            (title, value, created_at, created_by,
+             item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+             extra_checks, actual_id, actual_od1, actual_od2,
+             verdict_id, verdict_od1, verdict_od2, verdict_overall)
+            VALUES (%s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s)
+        """, (
+            f"Xóa hạng mục {name}",
+            latest["id_size"] or 0.0,
+            datetime.now(TZ_VN),
+            session.get("user_id"),
+            item_code,
+            latest["id_size"], latest["id_tol"],
+            latest["od1_size"], latest["od1_tol"],
+            latest["od2_size"], latest["od2_tol"],
+            {"spec": new_spec, "history": []},
+            None, None, None,
+            None, None, None, None
+        ))
     flash(f"Đã xóa hạng mục '{name}' khỏi {item_code}.", "success")
     return ("", 204)
+
 
 @app.route("/export")
 @login_required
 def export_csv():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("""
-        SELECT id, item_code,
-               id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-               actual_id, actual_od1, actual_od2,
-               verdict_id, verdict_od1, verdict_od2, verdict_overall,
-               created_at, extra_checks
-        FROM measurements
-        ORDER BY created_at DESC
-    """)
-    rows = cur.fetchall()
-    con.close()
+    with get_db() as con, con.cursor() as cur:
+        cur.execute("""
+            SELECT id, item_code,
+                   id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                   actual_id, actual_od1, actual_od2,
+                   verdict_id, verdict_od1, verdict_od2, verdict_overall,
+                   created_at, extra_checks
+            FROM measurements
+            ORDER BY created_at DESC
+        """)
+        rows = cur.fetchall()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -830,13 +837,14 @@ def export_csv():
             r["od2_size"], r["od2_tol"],
             r["actual_id"], r["actual_od1"], r["actual_od2"],
             r["verdict_id"], r["verdict_od1"], r["verdict_od2"], r["verdict_overall"],
-            r["created_at"], r["extra_checks"]
+            r["created_at"],
+            json.dumps(r["extra_checks"], ensure_ascii=False) if r["extra_checks"] is not None else None
         ])
     mem = io.BytesIO(output.getvalue().encode("utf-8"))
     mem.seek(0)
     return send_file(mem, as_attachment=True, download_name="measurements.csv", mimetype="text/csv")
 
-# --------- TẠO MỚI BÀI ĐO (form riêng cho specs) ---------
+
 @app.route("/measurements/new", methods=["GET", "POST"])
 @login_required
 def new_measurement():
@@ -855,51 +863,50 @@ def new_measurement():
         except Exception:
             spec_spec = []
 
-        con = get_db()
-        cur = con.cursor()
-        cur.execute("""
-            INSERT INTO measurements
-            (title, value, created_at, created_by,
-             item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-             extra_checks, actual_id, actual_od1, actual_od2,
-             verdict_id, verdict_od1, verdict_od2, verdict_overall)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "Thiết lập specs",
-            id_size or 0.0,
-            datetime.now(timezone.utc).isoformat(),
-            session.get("user_id"),
-            item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-            json.dumps({"spec": spec_spec, "history": []}, ensure_ascii=False),
-            None, None, None,
-            None, None, None, None
-        ))
-        con.commit()
-        con.close()
+        with get_db() as con, con.cursor() as cur:
+            cur.execute("""
+                INSERT INTO measurements
+                (title, value, created_at, created_by,
+                 item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                 extra_checks, actual_id, actual_od1, actual_od2,
+                 verdict_id, verdict_od1, verdict_od2, verdict_overall)
+                VALUES (%s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s)
+            """, (
+                "Thiết lập specs",
+                id_size or 0.0,
+                datetime.now(TZ_VN),
+                session.get("user_id"),
+                item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                {"spec": spec_spec, "history": []},
+                None, None, None,
+                None, None, None, None
+            ))
         flash("Đã tạo bài đo (specs) cho mã hàng.", "success")
         return redirect(url_for("inspect_measure", item_code=item_code))
 
     return render_template("create_measurement.html")
 
+
 @app.route("/measurements/<int:mid>/delete", methods=["POST"])
 @login_required
 def delete_measurement(mid):
     password = request.form.get("password", "")
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT password_hash FROM users WHERE id = ?", (session.get("user_id"),))
-    u = cur.fetchone()
-    if not u or not check_password_hash(u["password_hash"], password):
-        con.close()
-        flash("Mật khẩu không đúng. Không xoá.", "danger")
-        return redirect(url_for("list_measurements"))
+    with get_db() as con, con.cursor() as cur:
+        cur.execute("SELECT password_hash FROM users WHERE id = %s", (session.get("user_id"),))
+        u = cur.fetchone()
+        if not u or not check_password_hash(u["password_hash"], password):
+            flash("Mật khẩu không đúng. Không xoá.", "danger")
+            return redirect(url_for("list_measurements"))
 
-    cur.execute("DELETE FROM measurements WHERE id = ?", (mid,))
-    con.commit()
-    con.close()
+        cur.execute("DELETE FROM measurements WHERE id = %s", (mid,))
     flash(f"Đã xoá bài đo #{mid}.", "success")
     return redirect(url_for("list_measurements"))
 
-# --------------- Run ---------------
+
+# ===================== Run =====================
 if __name__ == "__main__":
+    # Local run
     app.run(host="0.0.0.0", port=5000, debug=True)
