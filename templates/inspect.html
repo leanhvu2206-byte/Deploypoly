@@ -365,7 +365,6 @@
       <h5 class="mt-3">Lịch sử {{ item_code }}</h5>
 
       <style>
-        /* Chip & màu PASS/FAIL cho lịch sử */
         .chips { display: flex; flex-direction: column; gap: .35rem; }
         .chip {
           display: inline-flex; align-items: center; gap: .35rem;
@@ -388,7 +387,6 @@
           line-height: 1.3;
         }
 
-        /* Pill verdict tổng thể (đồng bộ trang khác) */
         .pill {
           display: inline-block; padding: .35rem .7rem; border-radius: 9999px;
           font-weight: 700; font-size: .8rem; line-height: 1; color: #fff; min-width: 70px;
@@ -428,13 +426,9 @@
           from { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
           to   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
         }
-        .done-tick.fade-out {
-          opacity: 0; transform: translate(-50%, -50%) scale(0.95);
-          transition: all .5s ease;
-        }
+        .done-tick.fade-out { opacity: 0; transform: translate(-50%, -50%) scale(0.95); transition: all .5s ease; }
       </style>
 
-      {# Macro hiển thị chip cho ID/OD1/OD2 — đã sửa để nhận cả True/False lẫn 1/0 #}
       {% macro dim_chip(name, size, tol, actual, verdict) -%}
         {%- set v = verdict -%}
         {%- set is_pass = (v is boolean and v) or (v == 1) -%}
@@ -469,7 +463,6 @@
               <tr>
                 <td class="nowrap">{{ r.id }}</td>
 
-                <!-- Ba kích thước chính -->
                 <td>
                   <div class="chips">
                     {{ dim_chip('ID',  r.id_size,  r.id_tol,  r.actual_id,  r.verdict_id) }}
@@ -478,12 +471,10 @@
                   </div>
                 </td>
 
-                <!-- Extras -->
                 <td>
-                  {{ r.extra_checks | render_extras | safe }}
+                  {{ r.extra_checks | tojson | render_extras | safe }}
                 </td>
 
-                <!-- Verdict tổng thể -->
                 <td class="text-center">
                   {% if r.verdict_overall is not none %}
                     <span class="pill {{ r.verdict_overall and 'pill--pass' or 'pill--fail' }}">
@@ -511,19 +502,18 @@
         </table>
       </div>
 
-      <!-- JSON spec: đổi sang tojson để luôn hợp lệ với JSONB/dict -->
+      <!-- JSON spec -->
       <script id="spec-json" type="application/json">
 {{ (latest.extra_checks or None) | tojson }}
       </script>
 
-      <!-- JSON prefill actuals từ server -->
+      <!-- JSON prefill actuals -->
       <script id="prefill-actuals" type="application/json">
 {{ (extra_checks_actual or []) | tojson | safe }}
       </script>
 
       <script>
         (function() {
-          // Parse spec (baseline)
           let raw = null;
           try {
             const txt = (document.getElementById('spec-json')?.textContent || 'null').trim();
@@ -535,7 +525,6 @@
           const table = document.getElementById('checks-table');
           const tbody = table ? table.querySelector('tbody') : null;
 
-          // Prefill actuals từ server (request.values) và localStorage
           let prefill = [];
           try {
             prefill = JSON.parse(document.getElementById('prefill-actuals')?.textContent || '[]') || [];
@@ -543,16 +532,13 @@
 
           const LS_KEY = 'measure_prefill_' + {{ item_code | tojson }};
 
-          // merge localStorage (ưu tiên input mới)
           try {
             const fromLS = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
-
             const map = new Map(prefill.map(x => [String(x.name || '').trim(), x.actual]));
             (fromLS || []).forEach(x => {
               const nm = String(x.name || '').trim();
               if (!map.has(nm) || x.updated) map.set(nm, x.actual);
             });
-
             prefill = Array.from(map.entries()).map(([name, actual]) => ({ name, actual }));
           } catch(e) {}
 
@@ -582,7 +568,6 @@
             `;
           }
 
-          // Xóa hạng mục bổ sung
           if (table) {
             table.addEventListener('click', e => {
               const btn = e.target.closest('.del-extra');
@@ -591,7 +576,6 @@
               const name = btn.dataset.name;
               if (!confirm(`Xóa hạng mục "${name}"?`)) return;
 
-              // clear prefill in LS
               try {
                 const arr = JSON
                   .parse(localStorage.getItem(LS_KEY) || '[]')
@@ -606,38 +590,32 @@
 
           if (tbody) (specObj.spec || []).forEach(sp => tbody.insertAdjacentHTML('beforeend', rowTpl(sp)));
 
-          // ====== CỜ SPEC CHO 3 KÍCH THƯỚC CHÍNH ======
           const SPEC_FLAGS = {
             id:  {{ (latest and (latest.id_size  is not none or latest.id_tol))  and 'true' or 'false' }},
             od1: {{ (latest and (latest.od1_size is not none or latest.od1_tol)) and 'true' or 'false' }},
             od2: {{ (latest and (latest.od2_size is not none or latest.od2_tol)) and 'true' or 'false' }},
           };
 
-          // ====== THỨ TỰ FOCUS THEO SPEC ======
           function buildFlowOrder() {
             const order = [];
             const seen  = new Set();
             const pushIf = (el) => { if (el && !seen.has(el)) { order.push(el); seen.add(el); } };
 
-            // 1) Ba kích thước chính (chỉ thêm nếu có spec)
             if (SPEC_FLAGS.id)  pushIf(document.querySelector('input[name="actual_id"]'));
             if (SPEC_FLAGS.od1) pushIf(document.querySelector('input[name="actual_od1"]'));
             if (SPEC_FLAGS.od2) pushIf(document.querySelector('input[name="actual_od2"]'));
 
-            // 2) Extras theo thứ tự trong spec
             (specObj.spec || []).forEach(sp => {
               const nm = String(sp.name || '').trim();
               const el = tbody?.querySelector(`input.auto-input-ex[data-name="${CSS.escape(nm)}"]`);
               pushIf(el);
             });
 
-            // 3) Bổ sung các ô .auto-flow còn lại (nếu có)
             document.querySelectorAll('.auto-flow').forEach(el => pushIf(el));
 
             return order;
           }
 
-          // Helpers submit & lưu hidden JSON
           const form = document.getElementById('auto-form');
 
           function ensureHidden() {
@@ -666,14 +644,12 @@
 
             h.value = JSON.stringify(data);
 
-            // Lưu tạm vào localStorage
             try {
               const stamped = data.map(x => ({ ...x, updated: true }));
               localStorage.setItem(LS_KEY, JSON.stringify(stamped));
             } catch(e) {}
           }
 
-          // Tự submit sau 600ms khi nhập (để server tính ranges & missing), nhưng giữ prefill
           let t = null;
           function autoSubmit() {
             if (t) clearTimeout(t);
@@ -687,16 +663,12 @@
               el.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-
-                  // Lưu extra trước khi nhảy nếu đang ở ô extra
                   if (el.classList.contains('auto-input-ex')) collectExtraActuals();
-
                   const next = flow[i + 1];
                   if (next) {
                     next.focus();
                     next.select?.();
                   } else {
-                    // Hết danh sách spec → submit tự động
                     autoSubmit();
                   }
                 }
@@ -704,7 +676,6 @@
             });
           }
 
-          // Bind sự kiện
           document.querySelectorAll('.auto-input').forEach(el => el.addEventListener('input', autoSubmit));
 
           if (table) {
@@ -716,7 +687,6 @@
             });
           }
 
-          // Khởi tạo flow và focus vào ô spec trống đầu tiên
           setupFocusFlow();
           (function focusFirstEmpty() {
             const flow = buildFlowOrder();
@@ -724,22 +694,17 @@
             (firstEmpty || flow[0])?.focus();
           })();
 
-          // Trước khi submit thủ công, gom dữ liệu extras vào hidden
           form.addEventListener('submit', collectExtraActuals);
 
-          // Nếu đã có kết luận (PASS/FAIL) thì reset form đo + tick + focus theo spec
           {% if verdict.overall is not none %}
           (function showCompletionTick() {
-            // 1) Xóa dữ liệu actual
             document.querySelectorAll('input[name^="actual_"]').forEach(el => el.value = '');
             document.querySelectorAll('#checks-table input.auto-input-ex').forEach(el => el.value = '');
             try { localStorage.removeItem('measure_prefill_' + {{ item_code | tojson }}); } catch(e) {}
 
-            // 2) Focus lại ô đầu tiên theo SPEC
             const flow = buildFlowOrder();
             (flow[0] || document.querySelector('input[name="actual_id"]'))?.focus();
 
-            // 3) Hiển thị tick hoàn tất
             const tick = document.createElement('div');
             tick.className = 'done-tick';
             tick.innerHTML = `
@@ -753,7 +718,6 @@
             `;
             document.body.appendChild(tick);
 
-            // Xóa tick sau vài giây
             setTimeout(() => tick.classList.add('fade-out'), 2000);
             setTimeout(() => tick.remove(), 2600);
           })();
