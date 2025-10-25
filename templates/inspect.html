@@ -651,38 +651,63 @@
           }
 
         
-          function setupFocusFlow() {
-  const flow = buildFlowOrder();
-  const lastIdx = flow.length - 1;
+          const IDLE_MS = 500; // thời gian "ngưng gõ" để auto-jump (bạn đổi tùy ý)
 
-  flow.forEach((el, i) => {
-    el.dataset.idx = i;
+    function setupFocusFlow() {
+      const flow = buildFlowOrder();
+      const lastIdx = flow.length - 1;
 
-    // Khi gõ: chỉ lưu (đối với Extras); KHÔNG submit
-    el.addEventListener('input', () => {
-      if (el.classList.contains('auto-input-ex')) {
-        collectExtraActuals();
+      function moveNext(i) {
+        if (i < lastIdx) {
+          const next = flow[i + 1];
+          next?.focus();
+          next?.select?.();
+        } else {
+          // Ô cuối: gom extras rồi submit
+          collectExtraActuals();
+          form.submit();
+        }
       }
-    });
 
-    // Nhấn Enter:
-    // - Nếu chưa phải ô cuối: chỉ chuyển focus
-    // - Nếu là ô cuối: gom extras + submit form
-    el.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
+      flow.forEach((el, i) => {
+        el.dataset.idx = i;
 
-      if (i < lastIdx) {
-        const next = flow[i + 1];
-        next?.focus();
-        next?.select?.();
-      } else {
-        collectExtraActuals();
-        form.submit();
-      }
-    });
-  });
-}
+        // Timer riêng cho từng input để debounce
+        let idleTimer = null;
+
+        // Khi gõ: chỉ LƯU (nếu là Extras), KHÔNG submit, và hẹn giờ auto-jump
+        el.addEventListener('input', () => {
+          if (el.classList.contains('auto-input-ex')) {
+            // Lưu vào hidden + localStorage để không mất số liệu
+            collectExtraActuals();
+          }
+          if (idleTimer) clearTimeout(idleTimer);
+
+          idleTimer = setTimeout(() => {
+            // Chỉ auto-jump nếu người dùng đã nhập gì đó (tránh nhảy khi trống)
+            const hasValue = (el.value !== '' && el.value != null);
+            if (!hasValue) return;
+
+            // Auto-jump nhưng KHÔNG submit trừ khi là ô cuối
+            moveNext(i);
+          }, IDLE_MS);
+        });
+
+        // Nhấn Enter: nhảy ngay (không đợi timer); ô cuối thì submit
+        el.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          if (idleTimer) clearTimeout(idleTimer);
+
+          // Lưu extras nếu đang ở ô extras
+          if (el.classList.contains('auto-input-ex')) {
+            collectExtraActuals();
+          }
+
+          moveNext(i);
+        });
+      });
+    }
 
 
          if (table) {
