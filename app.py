@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json  # <== thêm dòng này
-
+from psycopg_pool import ConnectionPool 
 
 # ===================== Config =====================
 app = Flask(__name__)
@@ -17,12 +17,17 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # postgresql://... ?sslmode=require
 
 # Timezone VN
 TZ_VN = timezone(timedelta(hours=7))
-
+_pool = ConnectionPool(
+    conninfo=DATABASE_URL,
+    min_size=1,          # giữ sẵn 1 kết nối ấm
+    max_size=5,          # đủ cho tải nhẹ-trung bình
+    max_idle=30,         # đóng nếu idle > 30s
+    kwargs={"row_factory": dict_row, "connect_timeout": 5},)
 
 # ===================== DB Helpers =====================
 def get_db():
-    """Kết nối Postgres, mỗi lần dùng đóng ngay (context manager)."""
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    """Lấy connection từ pool (dùng context manager)."""
+    return _pool.connection()
 
 
 def init_db():
