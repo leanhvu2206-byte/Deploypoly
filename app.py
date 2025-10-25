@@ -5,13 +5,15 @@ import os, csv, io, json
 from datetime import datetime, timedelta, timezone
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Json  # <== thêm dòng này
+
 
 # ===================== Config =====================
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "change-this-secret-in-production"
 
 # Lấy URL Postgres từ biến môi trường
-DATABASE_URL = os.getenv("postgresql://neondb_owner:npg_c4hXV1EAqfSF@ep-wandering-art-a1oqsgfu-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require")  # postgresql://... ?sslmode=require
+DATABASE_URL = os.getenv("DATABASE_URL")  # postgresql://... ?sslmode=require
 
 # Timezone VN
 TZ_VN = timezone(timedelta(hours=7))
@@ -572,7 +574,7 @@ def inspect_measure():
                         latest["id_size"], latest["id_tol"],
                         latest["od1_size"], latest["od1_tol"],
                         latest["od2_size"], latest["od2_tol"],
-                        {"spec": cur_spec, "history": []},
+                        Json({"spec": spec_spec, "history": []}),
                         None, None, None,
                         None, None, None, None
                     ))
@@ -614,7 +616,7 @@ def inspect_measure():
                 session.get("user_id"),
                 item_code,
                 id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                {"spec": spec_spec, "history": []},
+                Json({"spec": spec_spec, "history": []}),
                 None, None, None,
                 None, None, None, None,
                 None, None, None  # measured_by, area, note
@@ -737,12 +739,12 @@ def inspect_measure():
                     latest["id_size"], latest["id_tol"],
                     latest["od1_size"], latest["od1_tol"],
                     latest["od2_size"], latest["od2_tol"],
-                    {
-                        "spec": norm_spec,
-                        "actuals": extra_checks_actual,
-                        "verdict_items": extra_with_verdict
-                    },
-                    actual_id, actual_od1, actual_od2,
+                   Json({
+    "spec": norm_spec,
+    "actuals": extra_checks_actual,
+    "verdict_items": extra_with_verdict
+}),
+actual_id, actual_od1, actual_od2,
                     verdict_id_val, verdict_od1_val, verdict_od2_val, overall_val,
                     measured_by or None, measure_area or None, note or None
                 ))
@@ -795,7 +797,7 @@ def delete_extra_check(name):
             latest["id_size"], latest["id_tol"],
             latest["od1_size"], latest["od1_tol"],
             latest["od2_size"], latest["od2_tol"],
-            {"spec": new_spec, "history": []},
+            Json({"spec": new_spec, "history": []}),
             None, None, None,
             None, None, None, None
         ))
@@ -880,7 +882,7 @@ def new_measurement():
                 datetime.now(TZ_VN),
                 session.get("user_id"),
                 item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                {"spec": spec_spec, "history": []},
+                Json({"spec": cur_spec, "history": []}),
                 None, None, None,
                 None, None, None, None
             ))
