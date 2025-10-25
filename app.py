@@ -14,20 +14,29 @@ app.config["SECRET_KEY"] = "change-this-secret-in-production"
 
 # Lấy URL Postgres từ biến môi trường
 DATABASE_URL = os.getenv("DATABASE_URL")  # postgresql://... ?sslmode=require
+if not DATABASE_URL:
+    raise RuntimeError("Missing env DATABASE_URL")
 
 # Timezone VN
 TZ_VN = timezone(timedelta(hours=7))
+
+# Kết nối Pool
 _pool = ConnectionPool(
     conninfo=DATABASE_URL,
     min_size=1,          # giữ sẵn 1 kết nối ấm
     max_size=5,          # đủ cho tải nhẹ-trung bình
     max_idle=30,         # đóng nếu idle > 30s
-    kwargs={"row_factory": dict_row, "connect_timeout": 5},)
+    kwargs={"row_factory": dict_row, "connect_timeout": 5},
+)
+
+# Tuỳ chọn: mở pool ngay (giúp “làm ấm” container)
+_pool.open()
 
 # ===================== DB Helpers =====================
 def get_db():
     """Lấy connection từ pool (dùng context manager)."""
     return _pool.connection()
+
 
 
 def init_db():
