@@ -650,42 +650,48 @@
             } catch(e) {}
           }
 
-          let t = null;
-          function autoSubmit() {
-            if (t) clearTimeout(t);
-            t = setTimeout(() => { collectExtraActuals(); form.submit(); }, 600);
-          }
-
+        
           function setupFocusFlow() {
-            const flow = buildFlowOrder();
-            flow.forEach((el, i) => {
-              el.dataset.idx = i;
-              el.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (el.classList.contains('auto-input-ex')) collectExtraActuals();
-                  const next = flow[i + 1];
-                  if (next) {
-                    next.focus();
-                    next.select?.();
-                  } else {
-                    autoSubmit();
-                  }
-                }
-              });
-            });
-          }
+  const flow = buildFlowOrder();
+  const lastIdx = flow.length - 1;
 
-          document.querySelectorAll('.auto-input').forEach(el => el.addEventListener('input', autoSubmit));
+  flow.forEach((el, i) => {
+    el.dataset.idx = i;
 
-          if (table) {
-            table.addEventListener('input', e => {
-              if (e.target.classList.contains('auto-input-ex')) {
-                collectExtraActuals();
-                autoSubmit();
-              }
-            });
-          }
+    // Khi gõ: chỉ lưu (đối với Extras); KHÔNG submit
+    el.addEventListener('input', () => {
+      if (el.classList.contains('auto-input-ex')) {
+        collectExtraActuals();
+      }
+    });
+
+    // Nhấn Enter:
+    // - Nếu chưa phải ô cuối: chỉ chuyển focus
+    // - Nếu là ô cuối: gom extras + submit form
+    el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+
+      if (i < lastIdx) {
+        const next = flow[i + 1];
+        next?.focus();
+        next?.select?.();
+      } else {
+        collectExtraActuals();
+        form.submit();
+      }
+    });
+  });
+}
+
+
+         if (table) {
+  table.addEventListener('input', e => {
+    if (e.target.classList.contains('auto-input-ex')) {
+      collectExtraActuals(); // chỉ lưu, không submit
+    }
+  });
+}
 
           setupFocusFlow();
           (function focusFirstEmpty() {
