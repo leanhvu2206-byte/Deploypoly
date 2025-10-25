@@ -11,7 +11,7 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = "change-this-secret-in-production"
 
 # Lấy URL Postgres từ biến môi trường
-DATABASE_URL = os.getenv("DATABASE_URL")  # postgresql://... ?sslmode=require
+DATABASE_URL = os.getenv("postgresql://neondb_owner:npg_c4hXV1EAqfSF@ep-wandering-art-a1oqsgfu-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require")  # postgresql://... ?sslmode=require
 
 # Timezone VN
 TZ_VN = timezone(timedelta(hours=7))
