@@ -882,7 +882,7 @@ def new_measurement():
                 datetime.now(TZ_VN),
                 session.get("user_id"),
                 item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                Json({"spec": cur_spec, "history": []}),
+                Json({"spec": spec_spec, "history": []}),
                 None, None, None,
                 None, None, None, None
             ))
