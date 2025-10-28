@@ -716,7 +716,7 @@ def inspect_measure():
                         latest["id_size"], latest["id_tol"],
                         latest["od1_size"], latest["od1_tol"],
                         latest["od2_size"], latest["od2_tol"],
-                        Json({"spec": spec_spec, "history": []}),
+                        Json({"spec": cur_spec, "history": []}),
                         None, None, None,
                         None, None, None, None
                     ))
