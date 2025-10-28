@@ -425,27 +425,30 @@ def logout():
 @login_required
 def dashboard():
     with get_db() as con, con.cursor() as cur:
-        # Tổng/AVG
+        # ====== Thống kê cơ bản ======
         cur.execute("SELECT COUNT(*) AS cnt FROM measurements")
         total = cur.fetchone()["cnt"]
+
+        # (giữ lại nếu còn dùng chỗ khác)
         cur.execute("SELECT AVG(value) AS avg_val FROM measurements")
         avg_val = cur.fetchone()["avg_val"]
 
-        # 5 gần nhất
+        # 5 bản ghi gần nhất
         cur.execute("""
             SELECT id, item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                   actual_id, actual_od1, actual_od2, measured_by, area, note, verdict_overall, created_at
+                   actual_id, actual_od1, actual_od2, measured_by, area, note,
+                   verdict_overall, created_at
             FROM measurements
             ORDER BY created_at DESC
             LIMIT 5
         """)
         recent = cur.fetchall()
 
-        # OK/NG
+        # OK / NG tổng
         cur.execute("""
             SELECT
-              SUM(CASE WHEN verdict_overall = TRUE THEN 1 ELSE 0 END) AS ok_cnt,
-              SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng_cnt
+              COALESCE(SUM(CASE WHEN verdict_overall = TRUE  THEN 1 ELSE 0 END),0) AS ok_cnt,
+              COALESCE(SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END),0) AS ng_cnt
             FROM measurements
             WHERE verdict_overall IS NOT NULL
         """)
@@ -453,7 +456,7 @@ def dashboard():
         ok_cnt = row["ok_cnt"] or 0
         ng_cnt = row["ng_cnt"] or 0
 
-        # By hour hôm nay theo Asia/Ho_Chi_Minh
+        # Theo giờ (hôm nay - TZ VN)
         by_hour = {f"{h:02d}": 0 for h in range(24)}
         cur.execute("""
             SELECT TO_CHAR(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24') AS hh, COUNT(*) AS c
@@ -467,7 +470,7 @@ def dashboard():
         hours_labels = list(by_hour.keys())
         hours_values = list(by_hour.values())
 
-        # 14 ngày gần nhất (Asia/Ho_Chi_Minh)
+        # 14 ngày gần nhất (TZ VN)
         cur.execute("""
             SELECT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d, COUNT(*) AS c
             FROM measurements
@@ -483,13 +486,138 @@ def dashboard():
             days_labels.append(ds)
             days_values.append(got.get(ds, 0))
 
+        # ====== Khu vực lỗi cao nhất (rate %) ======
+        cur.execute("""
+            WITH base AS (
+              SELECT area,
+                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng,
+                     SUM(CASE WHEN verdict_overall IS NOT NULL THEN 1 ELSE 0 END) AS total
+              FROM measurements
+              GROUP BY area
+            )
+            SELECT area,
+                   ng,
+                   total,
+                   CASE WHEN total > 0 THEN 100.0 * ng / total ELSE 0 END AS rate
+            FROM base
+            WHERE area IS NOT NULL AND total >= 3
+            ORDER BY rate DESC, total DESC
+            LIMIT 1
+        """)
+        r = cur.fetchone()
+        worst_area_name = (r and r["area"]) or None
+        worst_area_rate = (r and r["rate"]) or 0.0
+
+        # ====== Kích thước lỗi cao nhất (ID/OD1/OD2) theo rate % ======
+        cur.execute("""
+            SELECT
+              SUM(CASE WHEN verdict_id  = FALSE THEN 1 ELSE 0 END) AS fail_id,
+              SUM(CASE WHEN verdict_id  IS NOT NULL THEN 1 ELSE 0 END) AS tot_id,
+              SUM(CASE WHEN verdict_od1 = FALSE THEN 1 ELSE 0 END) AS fail_od1,
+              SUM(CASE WHEN verdict_od1 IS NOT NULL THEN 1 ELSE 0 END) AS tot_od1,
+              SUM(CASE WHEN verdict_od2 = FALSE THEN 1 ELSE 0 END) AS fail_od2,
+              SUM(CASE WHEN verdict_od2 IS NOT NULL THEN 1 ELSE 0 END) AS tot_od2
+            FROM measurements
+        """)
+        r = cur.fetchone()
+        dims = []
+        for key, label in (("id", "ID"), ("od1", "OD1"), ("od2", "OD2")):
+            fail = r[f"fail_{key}"] or 0
+            tot  = r[f"tot_{key}"] or 0
+            rate = (100.0 * fail / tot) if tot else 0.0
+            dims.append((label, rate))
+        worst_dim_name, worst_dim_rate = max(dims, key=lambda x: x[1]) if dims else (None, 0.0)
+
+        # ====== Top 5 lỗi phổ biến (gộp ID/OD1/OD2 + Extras) ======
+        # 1) lỗi ở 3 kích thước chính
+        cur.execute("""
+            SELECT 'ID'  AS name, COUNT(*) AS c FROM measurements WHERE verdict_id  = FALSE
+            UNION ALL
+            SELECT 'OD1' AS name, COUNT(*)       FROM measurements WHERE verdict_od1 = FALSE
+            UNION ALL
+            SELECT 'OD2' AS name, COUNT(*)       FROM measurements WHERE verdict_od2 = FALSE
+        """)
+        counts = {}
+        for r in cur.fetchall():
+            counts[r["name"]] = counts.get(r["name"], 0) + (r["c"] or 0)
+
+        # 2) lỗi ở hạng mục bổ sung (extra_checks.verdict_items[].pass = false)
+        cur.execute("""
+            SELECT TRIM(BOTH FROM x->>'name') AS name, COUNT(*) AS c
+            FROM measurements m
+            JOIN LATERAL jsonb_array_elements(m.extra_checks->'verdict_items') x ON TRUE
+            WHERE (x->>'pass')::boolean = FALSE
+            GROUP BY 1
+            ORDER BY c DESC
+            LIMIT 10
+        """)
+        for r in cur.fetchall():
+            nm = r["name"] or ""
+            if not nm:
+                continue
+            counts[nm] = counts.get(nm, 0) + (r["c"] or 0)
+
+        # Lấy top 5
+        top_errors = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_err_labels = [k for k, _ in top_errors]
+        top_err_counts = [v for _, v in top_errors]
+
+        # ====== Top 5 mã hàng lỗi cao (tỷ lệ %) ======
+        cur.execute("""
+            WITH b AS (
+              SELECT item_code,
+                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng,
+                     SUM(CASE WHEN verdict_overall IS NOT NULL THEN 1 ELSE 0 END) AS total
+              FROM measurements
+              GROUP BY item_code
+            )
+            SELECT item_code,
+                   CASE WHEN total > 0 THEN 100.0 * ng / total ELSE 0 END AS rate
+            FROM b
+            WHERE item_code IS NOT NULL AND total >= 3
+            ORDER BY rate DESC, total DESC
+            LIMIT 5
+        """)
+        rows = cur.fetchall()
+        top_sku_labels = [r["item_code"] for r in rows]
+        top_sku_rates  = [r["rate"] for r in rows]
+
+        # ====== Top 5 khu vực lỗi cao (tỷ lệ %) ======
+        cur.execute("""
+            WITH b AS (
+              SELECT area,
+                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng,
+                     SUM(CASE WHEN verdict_overall IS NOT NULL THEN 1 ELSE 0 END) AS total
+              FROM measurements
+              GROUP BY area
+            )
+            SELECT area,
+                   CASE WHEN total > 0 THEN 100.0 * ng / total ELSE 0 END AS rate
+            FROM b
+            WHERE area IS NOT NULL AND total >= 3
+            ORDER BY rate DESC, total DESC
+            LIMIT 5
+        """)
+        rows = cur.fetchall()
+        top_area_labels = [r["area"] for r in rows]
+        top_area_rates  = [r["rate"] for r in rows]
+
     return render_template(
         "dashboard.html",
+        # cũ
         total=total, avg_val=avg_val, recent=recent,
         ok_cnt=ok_cnt, ng_cnt=ng_cnt,
         hours_labels=hours_labels, hours_values=hours_values,
-        days_labels=days_labels, days_values=days_values
+        days_labels=days_labels, days_values=days_values,
+        # mới - thẻ thống kê
+        worst_area_name=worst_area_name, worst_area_rate=worst_area_rate,
+        worst_dim_name=worst_dim_name,   worst_dim_rate=worst_dim_rate,
+        # mới - 3 biểu đồ top
+        top_err_labels=top_err_labels, top_err_counts=top_err_counts,
+        top_sku_labels=top_sku_labels, top_sku_rates=top_sku_rates,
+        top_area_labels=top_area_labels, top_area_rates=top_area_rates,
     )
+
 
 
 @app.route("/measurements")

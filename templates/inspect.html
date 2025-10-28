@@ -172,194 +172,199 @@
         })();
       </script>
 
-    {% else %}
+{% else %}
 
-      <div class="card mb-3">
-        <div class="card-body">
-          <h5 class="card-title">
-            Mã hàng: <span class="text-primary">{{ item_code }}</span>
-          </h5>
+  <!-- FORM ĐO + THÔNG TIN (đổi thứ tự các khối theo yêu cầu) -->
+  <form method="post" class="card p-3 mb-4" id="auto-form">
+    <input type="hidden" name="item_code" value="{{ item_code }}">
+    <input type="hidden" name="extra_checks_actual" id="extra_checks_actual">
 
-          <div class="row g-3">
-            <div class="col-md-4">
-              <div class="small text-muted">ID</div>
-              <div>
-                <strong>{{ latest.id_size is not none and latest.id_size or '—' }}</strong>
-                {% if latest.id_tol %} ({{ latest.id_tol }}){% endif %}
-              </div>
+    {# HÀNG 1: Người đo / Khu vực đo / Ghi chú #}
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Người đo</label>
+        <input
+          class="form-control"
+          name="measured_by"
+          placeholder="VD: Nguyễn Văn A"
+          value="{{ request.values.get('measured_by', session.get('username','')) }}"
+        >
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Khu vực đo</label>
+        <input
+          class="form-control"
+          name="measure_area"
+          placeholder="VD: Line 1 / Khu A"
+          value="{{ request.values.get('measure_area','') }}"
+        >
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Ghi chú</label>
+        <input
+          class="form-control"
+          name="note"
+          placeholder="Ghi chú thêm (nếu có)"
+          value="{{ request.values.get('note','') }}"
+        >
+      </div>
+    </div>
+
+    {# HÀNG 2: Mã hàng (card specs tóm tắt) #}
+    <div class="card my-3">
+      <div class="card-body">
+        <h5 class="card-title">
+          Mã hàng: <span class="text-primary">{{ item_code }}</span>
+        </h5>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="small text-muted">ID</div>
+            <div>
+              <strong>{{ latest.id_size is not none and latest.id_size or '—' }}</strong>
+              {% if latest.id_tol %} ({{ latest.id_tol }}){% endif %}
             </div>
+          </div>
 
-            <div class="col-md-4">
-              <div class="small text-muted">OD1</div>
-              <div>
-                <strong>{{ latest.od1_size is not none and latest.od1_size or '—' }}</strong>
-                {% if latest.od1_tol %} ({{ latest.od1_tol }}){% endif %}
-              </div>
+          <div class="col-md-4">
+            <div class="small text-muted">OD1</div>
+            <div>
+              <strong>{{ latest.od1_size is not none and latest.od1_size or '—' }}</strong>
+              {% if latest.od1_tol %} ({{ latest.od1_tol }}){% endif %}
             </div>
+          </div>
 
-            <div class="col-md-4">
-              <div class="small text-muted">OD2</div>
-              <div>
-                <strong>{{ latest.od2_size is not none and latest.od2_size or '—' }}</strong>
-                {% if latest.od2_tol %} ({{ latest.od2_tol }}){% endif %}
-              </div>
+          <div class="col-md-4">
+            <div class="small text-muted">OD2</div>
+            <div>
+              <strong>{{ latest.od2_size is not none and latest.od2_size or '—' }}</strong>
+              {% if latest.od2_tol %} ({{ latest.od2_tol }}){% endif %}
             </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- FORM ĐO + THÔNG TIN -->
-      <form method="post" class="card p-3 mb-4" id="auto-form">
-        <input type="hidden" name="item_code" value="{{ item_code }}">
-        <input type="hidden" name="extra_checks_actual" id="extra_checks_actual">
-
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label">Người đo</label>
-            <input
-              class="form-control"
-              name="measured_by"
-              placeholder="VD: Nguyễn Văn A"
-              value="{{ request.values.get('measured_by', session.get('username','')) }}"
-            >
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Khu vực đo</label>
-            <input
-              class="form-control"
-              name="measure_area"
-              placeholder="VD: Line 1 / Khu A"
-              value="{{ request.values.get('measure_area','') }}"
-            >
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Ghi chú</label>
-            <input
-              class="form-control"
-              name="note"
-              placeholder="Ghi chú thêm (nếu có)"
-              value="{{ request.values.get('note','') }}"
-            >
-          </div>
-        </div>
-
-        <h6 class="mb-3 mt-3">Nhập số liệu đo (tự động phán định & lưu)</h6>
-
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label">Actual ID</label>
-            <input
-              class="form-control auto-input auto-flow"
-              name="actual_id"
-              value="{{ actual_id is not none and actual_id or '' }}"
-              type="number"
-              step="any"
-              placeholder="VD: 10.01"
-            >
-            {% set r = verdict.ranges.id %}
-            {% if r and r[0] is not none %}
-              <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
-            {% endif %}
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Actual OD1</label>
-            <input
-              class="form-control auto-input auto-flow"
-              name="actual_od1"
-              value="{{ actual_od1 is not none and actual_od1 or '' }}"
-              type="number"
-              step="any"
-              placeholder="VD: 20.00"
-            >
-            {% set r = verdict.ranges.od1 %}
-            {% if r and r[0] is not none %}
-              <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
-            {% endif %}
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Actual OD2</label>
-            <input
-              class="form-control auto-input auto-flow"
-              name="actual_od2"
-              value="{{ actual_od2 is not none and actual_od2 or '' }}"
-              type="number"
-              step="any"
-              placeholder="VD: 30.00"
-            >
-            {% set r = verdict.ranges.od2 %}
-            {% if r and r[0] is not none %}
-              <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
-            {% endif %}
-          </div>
-        </div>
-
-        <!-- Form thêm hạng mục (hiển thị ngang) -->
-        <div class="border rounded p-3 bg-light mb-3">
-          <input type="hidden" name="add_extra" value="on">
-          <div class="d-flex flex-row align-items-end gap-3 flex-wrap">
-            <div style="min-width: 200px;">
-              <label class="form-label mb-1">Tên hạng mục</label>
-              <input class="form-control form-control-sm" name="add_extra_name" placeholder="VD: OD3, R 1.5">
-            </div>
-            <div style="width: 120px;">
-              <label class="form-label mb-1">Nominal</label>
-              <input class="form-control form-control-sm" name="add_extra_nominal" type="number" step="any" placeholder="12.00">
-            </div>
-            <div style="width: 200px;">
-              <label class="form-label mb-1">Dung sai</label>
-              <input class="form-control form-control-sm" name="add_extra_tol" placeholder="±0.03 hoặc +0.02/-0.01">
-            </div>
-            <div class="d-flex align-items-end">
-              <button class="btn btn-secondary btn-sm" type="submit">+ Thêm hạng mục</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="mt-2">
-          <h6 class="mb-2">Hạng mục kiểm tra bổ sung</h6>
-          <div class="table-responsive">
-            <table class="table table-sm align-middle" id="checks-table">
-              <thead>
-                <tr>
-                  <th>Tên</th>
-                  <th>Nominal</th>
-                  <th>Tol +</th>
-                  <th>Tol −</th>
-                  <th>Actual</th>
-                  <th>Xóa</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-
-        <hr class="my-3">
-
-        {% if verdict.overall is not none %}
-          <div class="alert {{ verdict.overall and 'alert-success' or 'alert-danger' }}">
-            <strong>Kết luận:</strong> {{ verdict.overall and 'PASS' or 'FAIL' }}
-            <span class="ms-2 small text-muted">
-              (ID: {{ verdict.id is none and '—' or (verdict.id and 'PASS' or 'FAIL') }},
-               OD1: {{ verdict.od1 is none and '—' or (verdict.od1 and 'PASS' or 'FAIL') }},
-               OD2: {{ verdict.od2 is none and '—' or (verdict.od2 and 'PASS' or 'FAIL') }})
-            </span>
-          </div>
+    {# HÀNG 3: Nhập số liệu đo #}
+    <h6 class="mb-3">Nhập số liệu đo (tự động phán định & lưu)</h6>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Actual ID</label>
+        <input
+          class="form-control auto-input auto-flow"
+          name="actual_id"
+          value="{{ actual_id is not none and actual_id or '' }}"
+          type="number"
+          step="any"
+          placeholder="VD: 10.01"
+        >
+        {% set r = verdict.ranges.id %}
+        {% if r and r[0] is not none %}
+          <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
         {% endif %}
+      </div>
 
-        {% if missing_fields and missing_fields | length > 0 %}
-          <div class="alert alert-warning mt-2">
-            ⚠️ Chưa đủ số liệu để phán định hoặc lưu kết quả.<br>
-            Thiếu: {{ missing_fields | join(', ') }}.
-          </div>
+      <div class="col-md-4">
+        <label class="form-label">Actual OD1</label>
+        <input
+          class="form-control auto-input auto-flow"
+          name="actual_od1"
+          value="{{ actual_od1 is not none and actual_od1 or '' }}"
+          type="number"
+          step="any"
+          placeholder="VD: 20.00"
+        >
+        {% set r = verdict.ranges.od1 %}
+        {% if r and r[0] is not none %}
+          <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
         {% endif %}
+      </div>
 
-        <button type="submit" class="btn btn-primary mt-2">Đo & Phán định</button>
-      </form>
+      <div class="col-md-4">
+        <label class="form-label">Actual OD2</label>
+        <input
+          class="form-control auto-input auto-flow"
+          name="actual_od2"
+          value="{{ actual_od2 is not none and actual_od2 or '' }}"
+          type="number"
+          step="any"
+          placeholder="VD: 30.00"
+        >
+        {% set r = verdict.ranges.od2 %}
+        {% if r and r[0] is not none %}
+          <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    {# HÀNG 4: Bảng hạng mục kiểm tra bổ sung #}
+    <div class="mt-2">
+      <h6 class="mb-2">Hạng mục kiểm tra bổ sung</h6>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle" id="checks-table">
+          <thead>
+            <tr>
+              <th>Tên</th>
+              <th>Nominal</th>
+              <th>Tol +</th>
+              <th>Tol −</th>
+              <th>Actual</th>
+              <th>Xóa</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    {# HÀNG 5: Form thêm hạng mục (đưa xuống cuối) #}
+    <div class="border rounded p-3 bg-light mt-3">
+      <input type="hidden" name="add_extra" value="on">
+      <div class="d-flex flex-row align-items-end gap-3 flex-wrap">
+        <div style="min-width: 200px;">
+          <label class="form-label mb-1">Tên hạng mục</label>
+          <input class="form-control form-control-sm" name="add_extra_name" placeholder="VD: OD3, R 1.5">
+        </div>
+        <div style="width: 120px;">
+          <label class="form-label mb-1">Nominal</label>
+          <input class="form-control form-control-sm" name="add_extra_nominal" type="number" step="any" placeholder="12.00">
+        </div>
+        <div style="width: 200px;">
+          <label class="form-label mb-1">Dung sai</label>
+          <input class="form-control form-control-sm" name="add_extra_tol" placeholder="±0.03 hoặc +0.02/-0.01">
+        </div>
+        <div class="d-flex align-items-end">
+          <button class="btn btn-secondary btn-sm" type="submit">+ Thêm hạng mục</button>
+        </div>
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    {% if verdict.overall is not none %}
+      <div class="alert {{ verdict.overall and 'alert-success' or 'alert-danger' }}">
+        <strong>Kết luận:</strong> {{ verdict.overall and 'PASS' or 'FAIL' }}
+        <span class="ms-2 small text-muted">
+          (ID: {{ verdict.id is none and '—' or (verdict.id and 'PASS' or 'FAIL') }},
+           OD1: {{ verdict.od1 is none and '—' or (verdict.od1 and 'PASS' or 'FAIL') }},
+           OD2: {{ verdict.od2 is none and '—' or (verdict.od2 and 'PASS' or 'FAIL') }})
+        </span>
+      </div>
+    {% endif %}
+
+    {% if missing_fields and missing_fields | length > 0 %}
+      <div class="alert alert-warning mt-2">
+        ⚠️ Chưa đủ số liệu để phán định hoặc lưu kết quả.<br>
+        Thiếu: {{ missing_fields | join(', ') }}.
+      </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary mt-2">Đo & Phán định</button>
+  </form>
 
       <!-- LỊCH SỬ -->
       <h5 class="mt-3">Lịch sử {{ item_code }}</h5>

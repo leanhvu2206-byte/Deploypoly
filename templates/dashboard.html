@@ -2,6 +2,7 @@
 {% block content %}
 <h3 class="mb-4">Dashboard</h3>
 
+<!-- ====== 3 thẻ số liệu ====== -->
 <div class="row g-3">
   <div class="col-md-4">
     <div class="card stat"><div class="card-body">
@@ -9,41 +10,41 @@
       <div class="stat-value">{{ total or 0 }}</div>
     </div></div>
   </div>
+
   <div class="col-md-4">
     <div class="card stat"><div class="card-body">
-      <div class="stat-label">Giá trị trung bình (dựa trên ID)</div>
-      <div class="stat-value">{{ (avg_val or 0) | round(2) }}</div>
+      <div class="stat-label">Khu vực lỗi cao nhất</div>
+      <div class="stat-value">
+        {{ worst_area_name or '—' }}
+        <small class="text-muted">({{ (worst_area_rate or 0) | round(1) }}%)</small>
+      </div>
     </div></div>
   </div>
+
   <div class="col-md-4">
     <div class="card stat"><div class="card-body">
-      <div class="stat-label">Bài đo gần đây</div>
-      <div class="stat-value">{{ recent | length }}</div>
+      <div class="stat-label">Kích thước lỗi cao nhất</div>
+      <div class="stat-value">
+        {{ worst_dim_name or '—' }}
+        <small class="text-muted">({{ (worst_dim_rate or 0) | round(1) }}%)</small>
+      </div>
     </div></div>
   </div>
 </div>
 
 <style>
 /* Nhẹ nhàng format cột người đo */
-.who {
-  line-height: 1.25;
-}
+.who { line-height: 1.25; }
 .who__name { font-weight: 600; }
 .who__area { color: #6b7280; font-size: .85em; }
 .who__note {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;          /* tối đa 2 dòng, hiện … nếu dài */
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: normal;
-  margin-top: .15rem;
-  font-size: .9em;
-  color: #374151;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis; white-space: normal;
+  margin-top: .15rem; font-size: .9em; color: #374151;
 }
 </style>
 
-<!-- ====== 3 BIỂU ĐỒ ====== -->
+<!-- ====== 3 BIỂU ĐỒ HIỆN CÓ ====== -->
 <div class="row g-3 mt-2">
   <div class="col-lg-4">
     <div class="card h-100">
@@ -71,6 +72,34 @@
   </div>
 </div>
 
+<!-- ====== 3 BIỂU ĐỒ MỚI ====== -->
+<div class="row g-3 mt-2">
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Top 5 lỗi phổ biến</h6>
+        <canvas id="chart-top-errors" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Top 5 mã hàng lỗi cao (tỷ lệ %)</h6>
+        <canvas id="chart-top-sku" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-3">Top 5 khu vực lỗi cao (tỷ lệ %)</h6>
+        <canvas id="chart-top-area" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
 <h5 class="mt-4">5 bài đo mới nhất</h5>
 <table class="table table-hover align-middle">
   <thead>
@@ -78,7 +107,7 @@
       <th>ID</th>
       <th>Mã hàng</th>
       <th>Actuals</th>
-      <th>Người đo / Khu vực / Ghi chú</th>  {# ⬅️ cột mới #}
+      <th>Người đo / Khu vực / Ghi chú</th>
       <th>Verdict</th>
       <th>Thời gian</th>
     </tr>
@@ -88,7 +117,6 @@
     <tr>
       <td>{{ r.id }}</td>
       <td>{{ r.item_code }}</td>
-
       <td>
         {{ r.actual_id is not none and r.actual_id or '—' }}
         /
@@ -96,15 +124,11 @@
         /
         {{ r.actual_od2 is not none and r.actual_od2 or '—' }}
       </td>
-
-      <!-- ⬇️ Cột mới: người đo / khu vực / ghi chú -->
       <td>
         <div class="who">
           <div class="who__name">
             {{ r.measured_by or '—' }}
-            {% if r.area %}
-              <span class="who__area"> • {{ r.area }}</span>
-            {% endif %}
+            {% if r.area %}<span class="who__area"> • {{ r.area }}</span>{% endif %}
           </div>
           {% if r.note %}
             <small class="who__note" title="{{ r.note }}">{{ r.note }}</small>
@@ -113,7 +137,6 @@
           {% endif %}
         </div>
       </td>
-
       <td>
         {% if r.verdict_overall is not none %}
           <span class="badge {{ r.verdict_overall and 'bg-success' or 'bg-danger' }}">
@@ -129,11 +152,11 @@
   </tbody>
 </table>
 
-<!-- Chart.js CDN -->
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 (function(){
-  // Dữ liệu từ Flask
+  // ----- Dữ liệu cho 3 chart cũ -----
   const okCnt   = {{ ok_cnt | default(0) }};
   const ngCnt   = {{ ng_cnt | default(0) }};
   const hLabels = {{ hours_labels | tojson | safe }};
@@ -144,43 +167,51 @@
   // Chart 1: OK vs NG
   new Chart(document.getElementById('chart-okng'), {
     type: 'bar',
-    data: {
-      labels: ['OK', 'NG'],
-      datasets: [{ label: 'Số lượng', data: [okCnt, ngCnt] }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, precision: 0 } }
-    }
+    data: { labels: ['OK', 'NG'], datasets: [{ label: 'Số lượng', data: [okCnt, ngCnt] }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, precision: 0 } } }
   });
 
-  // Chart 2: số lượng kiểm tra theo giờ (hôm nay)
+  // Chart 2: Theo giờ hôm nay
   new Chart(document.getElementById('chart-today'), {
     type: 'bar',
-    data: {
-      labels: hLabels,
-      datasets: [{ label: 'Lượt kiểm tra (hôm nay)', data: hValues }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, precision: 0 } }
-    }
+    data: { labels: hLabels, datasets: [{ label: 'Lượt kiểm tra (hôm nay)', data: hValues }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, precision: 0 } } }
   });
 
-  // Chart 3: số lượng bài đo theo ngày (14 ngày)
+  // Chart 3: Theo ngày 14 ngày
   new Chart(document.getElementById('chart-daily'), {
     type: 'line',
-    data: {
-      labels: dLabels,
-      datasets: [{ label: 'Bài đo/ngày', data: dValues, tension: 0.25, fill: false }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, precision: 0 } }
-    }
+    data: { labels: dLabels, datasets: [{ label: 'Bài đo/ngày', data: dValues, tension: 0.25, fill: false }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, precision: 0 } } }
+  });
+
+  // ----- Dữ liệu cho 3 chart mới -----
+  const topErrLabels  = {{ top_err_labels  | tojson | safe }};
+  const topErrCounts  = {{ top_err_counts  | tojson | safe }};
+  const topSkuLabels  = {{ top_sku_labels  | tojson | safe }};
+  const topSkuRates   = {{ top_sku_rates   | tojson | safe }};
+  const topAreaLabels = {{ top_area_labels | tojson | safe }};
+  const topAreaRates  = {{ top_area_rates  | tojson | safe }};
+
+  // Top 5 lỗi phổ biến (đếm)
+  new Chart(document.getElementById('chart-top-errors'), {
+    type: 'bar',
+    data: { labels: topErrLabels, datasets: [{ label: 'Số lần NG', data: topErrCounts }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, precision: 0 } } }
+  });
+
+  // Top 5 mã hàng NG cao (%)
+  new Chart(document.getElementById('chart-top-sku'), {
+    type: 'bar',
+    data: { labels: topSkuLabels, datasets: [{ label: 'NG (%)', data: topSkuRates }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
+  });
+
+  // Top 5 khu vực NG cao (%)
+  new Chart(document.getElementById('chart-top-area'), {
+    type: 'bar',
+    data: { labels: topAreaLabels, datasets: [{ label: 'NG (%)', data: topAreaRates }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
   });
 })();
 </script>
