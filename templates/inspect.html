@@ -248,56 +248,65 @@
     </div>
 
     {# HÀNG 3: Nhập số liệu đo #}
-    <h6 class="mb-3">Nhập số liệu đo (tự động phán định & lưu)</h6>
-    <div class="row g-3">
-      <div class="col-md-4">
-        <label class="form-label">Actual ID</label>
-        <input
-          class="form-control auto-input auto-flow"
-          name="actual_id"
-          value="{{ actual_id is not none and actual_id or '' }}"
-          type="number"
-          step="any"
-          placeholder="VD: 10.01"
-        >
-        {% set r = verdict.ranges.id %}
-        {% if r and r[0] is not none %}
-          <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
-        {% endif %}
+<h6 class="mb-3">Nhập số liệu đo (tự động phán định & lưu)</h6>
+<div class="row g-3">
+  <!-- Actual ID -->
+  <div class="col-md-4">
+    <label class="form-label">Actual ID</label>
+    <input
+      class="form-control auto-input auto-flow"
+      name="actual_id"
+      value="{{ actual_id is not none and actual_id or '' }}"
+      type="number"
+      step="any"
+      placeholder="VD: 10.01"
+    >
+    {% set r = verdict.ranges.id %}
+    {% if r and r[0] is not none %}
+      <div class="form-text">
+        Khoảng cho phép: {{ r[0]|round(2) }} đến {{ r[1]|round(2) }}
       </div>
+    {% endif %}
+  </div>
 
-      <div class="col-md-4">
-        <label class="form-label">Actual OD1</label>
-        <input
-          class="form-control auto-input auto-flow"
-          name="actual_od1"
-          value="{{ actual_od1 is not none and actual_od1 or '' }}"
-          type="number"
-          step="any"
-          placeholder="VD: 20.00"
-        >
-        {% set r = verdict.ranges.od1 %}
-        {% if r and r[0] is not none %}
-          <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
-        {% endif %}
+  <!-- Actual OD1 -->
+  <div class="col-md-4">
+    <label class="form-label">Actual OD1</label>
+    <input
+      class="form-control auto-input auto-flow"
+      name="actual_od1"
+      value="{{ actual_od1 is not none and actual_od1 or '' }}"
+      type="number"
+      step="any"
+      placeholder="VD: 20.00"
+    >
+    {% set r = verdict.ranges.od1 %}
+    {% if r and r[0] is not none %}
+      <div class="form-text">
+        Khoảng cho phép: {{ r[0]|round(2) }} đến {{ r[1]|round(2) }}
       </div>
+    {% endif %}
+  </div>
 
-      <div class="col-md-4">
-        <label class="form-label">Actual OD2</label>
-        <input
-          class="form-control auto-input auto-flow"
-          name="actual_od2"
-          value="{{ actual_od2 is not none and actual_od2 or '' }}"
-          type="number"
-          step="any"
-          placeholder="VD: 30.00"
-        >
-        {% set r = verdict.ranges.od2 %}
-        {% if r and r[0] is not none %}
-          <div class="form-text">Khoảng cho phép: {{ r[0] }} đến {{ r[1] }}</div>
-        {% endif %}
+  <!-- Actual OD2 -->
+  <div class="col-md-4">
+    <label class="form-label">Actual OD2</label>
+    <input
+      class="form-control auto-input auto-flow"
+      name="actual_od2"
+      value="{{ actual_od2 is not none and actual_od2 or '' }}"
+      type="number"
+      step="any"
+      placeholder="VD: 30.00"
+    >
+    {% set r = verdict.ranges.od2 %}
+    {% if r and r[0] is not none %}
+      <div class="form-text">
+        Khoảng cho phép: {{ r[0]|round(2) }} đến {{ r[1]|round(2) }}
       </div>
-    </div>
+    {% endif %}
+  </div>
+</div>
 
     <hr class="my-3">
 
