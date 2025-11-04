@@ -42,57 +42,47 @@ def get_db():
 def init_db():
     """Tạo schema nếu chưa có + seed user admin."""
     ddl = """
-    CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-    CREATE TABLE IF NOT EXISTS measurements (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        value DOUBLE PRECISION NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        created_by INTEGER REFERENCES users(id),
+CREATE TABLE IF NOT EXISTS measurements (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  value DOUBLE PRECISION NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by INTEGER REFERENCES users(id),
+  item_code TEXT,
+  id_size DOUBLE PRECISION, id_tol TEXT,
+  od1_size DOUBLE PRECISION, od1_tol TEXT,
+  od2_size DOUBLE PRECISION, od2_tol TEXT,
+  measured_by TEXT, area TEXT, note TEXT,
+  extra_checks JSONB,
+  actual_id DOUBLE PRECISION, actual_od1 DOUBLE PRECISION, actual_od2 DOUBLE PRECISION,
+  verdict_id BOOLEAN, verdict_od1 BOOLEAN, verdict_od2 BOOLEAN, verdict_overall BOOLEAN
+);
 
-        item_code TEXT,
-        id_size DOUBLE PRECISION,
-        id_tol TEXT,
-        od1_size DOUBLE PRECISION,
-        od1_tol TEXT,
-        od2_size DOUBLE PRECISION,
-        od2_tol TEXT,
-        measured_by TEXT,
-        area TEXT,
-        note TEXT,
+CREATE INDEX IF NOT EXISTS idx_measurements_item_code ON measurements(item_code);
+CREATE INDEX IF NOT EXISTS idx_measurements_created_at_vn_date
+  ON measurements ( ((created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) );
 
-        extra_checks JSONB,
-        actual_id DOUBLE PRECISION,
-        actual_od1 DOUBLE PRECISION,
-        actual_od2 DOUBLE PRECISION,
-        verdict_id BOOLEAN,
-        verdict_od1 BOOLEAN,
-        verdict_od2 BOOLEAN,
-        verdict_overall BOOLEAN
-    );
+-- NEW: bảng hành động khắc phục
+CREATE TABLE IF NOT EXISTS corrective_actions (
+  id SERIAL PRIMARY KEY,
+  measurement_id INTEGER NOT NULL REFERENCES measurements(id) ON DELETE CASCADE,
+  seq_no INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  owner TEXT,
+  due_date DATE,
+  status TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ca_measurement ON corrective_actions(measurement_id);
+"""
 
-    CREATE INDEX IF NOT EXISTS idx_measurements_item_code ON measurements(item_code);
-    -- Index ngày theo múi giờ VN để nhóm/ngày nhanh
-    CREATE INDEX IF NOT EXISTS idx_measurements_created_at_vn_date
-      ON measurements ( ((created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) );
-    
-    CREATE TABLE IF NOT EXISTS corrective_actions (
-        id SERIAL PRIMARY KEY,
-        measurement_id INTEGER NOT NULL REFERENCES measurements(id) ON DELETE CASCADE,
-        seq_no INTEGER NOT NULL,
-        action TEXT NOT NULL,
-        owner TEXT,
-        due_date DATE,
-        status TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ca_measurement ON corrective_actions(measurement_id);"""
 
 
     with get_db() as con, con.cursor() as cur:
@@ -1104,6 +1094,40 @@ def upsert_action(mid):
     flash(f"Đã cập nhật hành động cho bài đo #{mid}.", "success")
     # quay lại danh sách và cuộn tới hàng vừa thao tác (anchor)
     return redirect(url_for("list_measurements") + f"#m{mid}")
+# ---------- CẬP NHẬT HÀNH ĐỘNG (CORRECTIVE ACTION) ----------
+@app.post("/measurements/<int:mid>/actions")
+@login_required
+def upsert_action(mid: int):
+    """Thêm hoặc cập nhật hành động khắc phục cho một bài đo."""
+    seq_no = request.form.get("seq_no", type=int)
+    action_txt = (request.form.get("action") or "").strip()
+    owner = (request.form.get("owner") or "").strip() or None
+    due_date = request.form.get("due_date") or None
+    status = (request.form.get("status") or "").strip() or None
+
+    if not action_txt:
+        flash("Vui lòng nhập mô tả hành động.", "warning")
+        return redirect(url_for("list_measurements"))
+
+    if not seq_no or seq_no < 1:
+        seq_no = 1
+
+    with get_db() as con, con.cursor() as cur:
+        # Kiểm tra tồn tại bài đo
+        cur.execute("SELECT 1 FROM measurements WHERE id = %s", (mid,))
+        if cur.fetchone() is None:
+            flash(f"Không tìm thấy bài đo #{mid}.", "danger")
+            return redirect(url_for("list_measurements"))
+
+        # Thêm bản ghi vào bảng corrective_actions
+        cur.execute("""
+            INSERT INTO corrective_actions
+                (measurement_id, seq_no, action, owner, due_date, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (mid, seq_no, action_txt, owner, due_date, status))
+
+    flash("Đã lưu hành động khắc phục.", "success")
+    return redirect(url_for("list_measurements"))
 
 # ===================== Run =====================
 if __name__ == "__main__":
