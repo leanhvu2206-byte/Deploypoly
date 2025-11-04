@@ -82,9 +82,6 @@ CREATE TABLE IF NOT EXISTS corrective_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_ca_measurement ON corrective_actions(measurement_id);
 """
-
-
-
     with get_db() as con, con.cursor() as cur:
         cur.execute(ddl)
         cur.execute("SELECT id FROM users WHERE username = %s", ("admin",))
@@ -636,19 +633,20 @@ def list_measurements():
             """, (f"%{q}%", f"%{q}%"))
         else:
             cur.execute("SELECT * FROM measurements ORDER BY created_at DESC")
-        rows = cur.fetchall()   
-         # --- Kéo kèm các hành động cho các measurement đang hiển thị ---
-    actions_by_mid = {}
-    if rows:
-        ids = [r["id"] for r in rows]
-        cur.execute("""
-            SELECT id, measurement_id, seq_no, action, owner, due_date, status, created_at
-            FROM corrective_actions
-            WHERE measurement_id = ANY(%s)
-            ORDER BY measurement_id, seq_no, id
-        """, (ids,))
-        for a in cur.fetchall():
-            actions_by_mid.setdefault(a["measurement_id"], []).append(a)
+        rows = cur.fetchall()
+
+        # --- Kéo kèm các hành động cho các measurement đang hiển thị ---
+        actions_by_mid = {}
+        if rows:
+            ids = [r["id"] for r in rows]
+            cur.execute("""
+                SELECT id, measurement_id, seq_no, action, owner, due_date, status, created_at
+                FROM corrective_actions
+                WHERE measurement_id = ANY(%s)
+                ORDER BY measurement_id, seq_no, id
+            """, (ids,))
+            for a in cur.fetchall():
+                actions_by_mid.setdefault(a["measurement_id"], []).append(a)
 
     return render_template("measurements.html", rows=rows, q=q, actions_by_mid=actions_by_mid)
 
@@ -755,33 +753,35 @@ def inspect_measure():
             except Exception:
                 spec_spec = []
 
-            cur.execute("""
-                INSERT INTO measurements
-                (title, value, created_at, created_by,
-                 item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                 extra_checks, actual_id, actual_od1, actual_od2,
-                 verdict_id, verdict_od1, verdict_od2, verdict_overall,
-                 measured_by, area, note)
-                VALUES (%s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s,
-                        %s, %s, %s, %s,
-                        %s, %s, %s)
-            """, (
-                "Thiết lập specs",
-                id_size or 0.0,
-                datetime.now(TZ_VN),
-                session.get("user_id"),
-                item_code,
-                id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                Json({"spec": spec_spec, "history": []}),
-                None, None, None,
-                None, None, None, None,
-                None, None, None  # measured_by, area, note
-            ))
-            cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
-            rows = cur.fetchall()
-            latest = rows[0] if rows else None
+            with get_db() as con, con.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO measurements
+                    (title, value, created_at, created_by,
+                     item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                     extra_checks, actual_id, actual_od1, actual_od2,
+                     verdict_id, verdict_od1, verdict_od2, verdict_overall,
+                     measured_by, area, note)
+                    VALUES (%s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s)
+                """, (
+                    "Thiết lập specs",
+                    id_size or 0.0,
+                    datetime.now(TZ_VN),
+                    session.get("user_id"),
+                    item_code,
+                    id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
+                    Json({"spec": spec_spec, "history": []}),
+                    None, None, None,
+                    None, None, None, None,
+                    None, None, None  # measured_by, area, note
+                ))
+            with get_db() as con, con.cursor() as cur:
+                cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
+                rows = cur.fetchall()
+                latest = rows[0] if rows else None
             flash("Đã thiết lập specs ban đầu cho mã hàng.", "success")
 
         # 3) Phán định + tự lưu khi đủ số liệu
@@ -1065,35 +1065,7 @@ def delete_measurement(mid):
     flash(f"Đã xoá bài đo #{mid}.", "success")
     return redirect(url_for("list_measurements"))
 
-@app.route("/measurements/<int:mid>/actions", methods=["POST"])
-@login_required
-def upsert_action(mid):
-    seq_no = request.form.get("seq_no", "").strip()
-    action_text = (request.form.get("action") or "").strip()
-    owner = (request.form.get("owner") or "").strip()
-    due_date = (request.form.get("due_date") or "").strip()  # YYYY-MM-DD
-    status = (request.form.get("status") or "").strip()
 
-    # validate tối thiểu
-    try:
-        seq_no_i = int(seq_no)
-    except Exception:
-        flash("Số thứ tự phải là số nguyên.", "danger")
-        return redirect(url_for("list_measurements"))
-
-    if not action_text:
-        flash("Vui lòng nhập nội dung Hành động.", "danger")
-        return redirect(url_for("list_measurements"))
-
-    with get_db() as con, con.cursor() as cur:
-        cur.execute("""
-            INSERT INTO corrective_actions (measurement_id, seq_no, action, owner, due_date, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (mid, seq_no_i, action_text, owner or None, (due_date or None), status or None))
-
-    flash(f"Đã cập nhật hành động cho bài đo #{mid}.", "success")
-    # quay lại danh sách và cuộn tới hàng vừa thao tác (anchor)
-    return redirect(url_for("list_measurements") + f"#m{mid}")
 # ---------- CẬP NHẬT HÀNH ĐỘNG (CORRECTIVE ACTION) ----------
 @app.post("/measurements/<int:mid>/actions")
 @login_required
