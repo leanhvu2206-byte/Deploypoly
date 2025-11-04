@@ -21,7 +21,7 @@
     .text-end { text-align: right; }
     .text-muted { color: #6b7280; }
 
-    /* ====== Chips (Actuals & Extras) ====== */
+    /* ====== Chips ====== */
     .chips-col { display: flex; flex-direction: column; gap: .4rem; }
     .extras { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: flex-start; }
     .chip{
@@ -45,19 +45,8 @@
     }
     .pill--pass { background: linear-gradient(135deg, #16a34a, #22c55e); }
     .pill--fail { background: linear-gradient(135deg, #dc2626, #ef4444); }
-    .col-verdict { text-align: center; white-space: nowrap; width: 7rem; }
 
-    /* ====== Cột người đo ====== */
-    .who { line-height: 1.25; }
-    .who__name { font-weight: 600; }
-    .who__area { color: #6b7280; font-size: .85em; }
-    .who__note {
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-      overflow: hidden; text-overflow: ellipsis; white-space: normal;
-      margin-top: .15rem; font-size: .9em; color: #374151;
-    }
-
-    /* ====== Hàng chứa form cập nhật ====== */
+    /* ====== Khối form cập nhật ====== */
     .ca-row { display: none; }
     .ca-row.show { display: table-row; }
     .ca-row > td {
@@ -75,11 +64,6 @@
     .ca-actions { display:flex; gap:.5rem; align-items:center; }
     .ca-hint { font-size:.8rem; color:#6b7280; }
 
-    /* ====== Preview trong cột Hành động ====== */
-    .ca-preview {
-      display:flex; flex-direction:column; gap:.2rem; font-size:.85rem; color:#111827;
-    }
-    .ca-preview small { color:#6b7280; }
     .badge-status{
       display:inline-block; padding:.15rem .5rem; border-radius:9999px; font-weight:600; font-size:.75rem;
       background:#e5e7eb;
@@ -89,8 +73,6 @@
     .badge-status[data-s="done"]{ background:#bbf7d0; }
 
     @media (max-width: 1200px) {
-      th, td { font-size: .9rem; padding: .45rem .6rem; }
-      .extras { gap: .35rem; }
       .ca-grid { grid-template-columns: 60px 1fr 140px 140px 140px auto; }
     }
     @media (max-width: 768px) {
@@ -128,21 +110,6 @@
   {%- endmacro %}
 
   <table class="table table-striped table-sm align-middle">
-    <colgroup>
-      <col style="width:5%">
-      <col style="width:10%">
-      <col style="width:12%">
-      <col style="width:12%">
-      <col style="width:12%">
-      <col style="width:18%">
-      <col>
-      <col style="width:16%">
-      <col style="width:8%">
-      <col style="width:18%"> <!-- tăng 1 chút cho preview -->
-      <col style="width:8%">
-      <col style="width:6%">
-    </colgroup>
-
     <thead>
       <tr>
         <th class="text-end">ID</th>
@@ -162,7 +129,6 @@
 
     <tbody>
       {% for r in rows %}
-        {% set a = r.action %}
         <tr id="m-{{ r.id }}">
           <td class="text-center">{{ r.id }}</td>
           <td>{{ r.item_code or '' }}</td>
@@ -188,20 +154,12 @@
           <td>{{ r.extra_checks | render_extras | safe }}</td>
 
           <td>
-            <div class="who">
-              <div class="who__name">
-                {{ r.measured_by or '—' }}
-                {% if r.area %}<span class="who__area"> • {{ r.area }}</span>{% endif %}
-              </div>
-              {% if r.note %}
-                <small class="who__note" title="{{ r.note }}">{{ r.note }}</small>
-              {% else %}
-                <small class="text-muted">—</small>
-              {% endif %}
-            </div>
+            {{ r.measured_by or '—' }}
+            {% if r.area %}<span class="text-muted"> • {{ r.area }}</span>{% endif %}
+            {% if r.note %}<br><small class="text-muted">{{ r.note }}</small>{% endif %}
           </td>
 
-          <td class="col-verdict">
+          <td>
             {% if r.verdict_overall is not none %}
               <span class="pill {{ r.verdict_overall and 'pill--pass' or 'pill--fail' }}">
                 {{ r.verdict_overall and 'PASS' or 'FAIL' }}
@@ -211,35 +169,15 @@
             {% endif %}
           </td>
 
-          <!-- Cột Hành động: preview + nút -->
           <td>
-            {% if a %}
-              <div class="ca-preview mb-2">
-                <div><strong>#{{ a.seq_no or '—' }}</strong> • <span>{{ a.action }}</span></div>
-                <div>
-                  <small>Owner: {{ a.owner or '—' }}</small>
-                  &nbsp;•&nbsp;
-                  <small>Due: {{ a.due_date and a.due_date.strftime('%Y-%m-%d') or '—' }}</small>
-                  &nbsp;•&nbsp;
-                  <span class="badge-status" data-s="{{ a.status }}">{{ a.status|replace('_',' ')|title }}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                class="btn btn-outline-primary btn-sm ca-toggle"
-                data-mid="{{ r.id }}"
-                aria-expanded="false">
-                Xem chi tiết
-              </button>
-            {% else %}
-              <button
-                type="button"
-                class="btn btn-outline-primary btn-sm ca-toggle"
-                data-mid="{{ r.id }}"
-                aria-expanded="false">
-                Cập nhật
-              </button>
-            {% endif %}
+            <button
+              type="button"
+              class="btn btn-outline-primary btn-sm ca-toggle"
+              data-mid="{{ r.id }}"
+              data-has-action="{{ '1' if r.action else '0' }}"
+              aria-expanded="false">
+              {{ 'Xem chi tiết' if r.action else 'Cập nhật' }}
+            </button>
           </td>
 
           <td class="text-muted">{{ r.created_at | fmt_dt }}</td>
@@ -257,37 +195,48 @@
           </td>
         </tr>
 
-        <!-- Hàng mở rộng chứa form cập nhật -->
+        <!-- Hàng mở rộng -->
         <tr id="carow-{{ r.id }}" class="ca-row">
           <td colspan="12">
             <div class="ca-card">
+              {% if r.action %}
+              <div class="mb-3" style="font-size:.9rem">
+                <div><strong>#{{ r.action.seq_no or '—' }}</strong> • {{ r.action.action }}</div>
+                <div class="text-muted">
+                  Owner: {{ r.action.owner or '—' }} •
+                  Due: {{ r.action.due_date and r.action.due_date.strftime('%Y-%m-%d') or '—' }} •
+                  <span class="badge-status" data-s="{{ r.action.status }}">{{ r.action.status|replace('_',' ')|title }}</span>
+                </div>
+              </div>
+              {% endif %}
+
               <form method="post" action="{{ url_for('upsert_action', mid=r.id) }}">
                 <div class="ca-grid">
                   <div>
                     <label class="form-label mb-1">STT</label>
-                    <input type="number" name="seq_no" class="form-control form-control-sm" placeholder="#" value="{{ a and a.seq_no or '' }}">
+                    <input type="number" name="seq_no" class="form-control form-control-sm" placeholder="#" value="{{ r.action and r.action.seq_no or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Hành động</label>
-                    <input name="action" class="form-control form-control-sm" placeholder="Mô tả hành động cần làm" required value="{{ a and a.action or '' }}">
+                    <input name="action" class="form-control form-control-sm" placeholder="Mô tả hành động cần làm" required value="{{ r.action and r.action.action or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Người phụ trách</label>
-                    <input name="owner" class="form-control form-control-sm" placeholder="VD: Minh/QA" value="{{ a and a.owner or '' }}">
+                    <input name="owner" class="form-control form-control-sm" placeholder="VD: Minh/QA" value="{{ r.action and r.action.owner or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Thời hạn</label>
                     <input type="date" name="due_date" class="form-control form-control-sm"
-                           value="{{ a and a.due_date and a.due_date.strftime('%Y-%m-%d') or '' }}">
+                           value="{{ r.action and r.action.due_date and r.action.due_date.strftime('%Y-%m-%d') or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Tình trạng</label>
                     <select name="status" class="form-select form-select-sm">
-                      {% set st = a and a.status or 'open' %}
+                      {% set st = r.action and r.action.status or 'open' %}
                       <option value="open" {{ 'selected' if st=='open' else '' }}>Open</option>
                       <option value="in_progress" {{ 'selected' if st=='in_progress' else '' }}>In progress</option>
                       <option value="done" {{ 'selected' if st=='done' else '' }}>Done</option>
@@ -308,24 +257,21 @@
   </table>
 
   <script>
-    // Toggle mở/đóng hàng form cập nhật
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.ca-toggle');
       if (!btn) return;
-
-      const id  = btn.dataset.mid;
+      const id = btn.dataset.mid;
       const row = document.getElementById('carow-' + id);
+      const hasAction = btn.dataset.hasAction === '1';
 
-      // Đóng các hàng khác (nếu muốn chỉ mở 1 cái)
       document.querySelectorAll('.ca-row.show').forEach(r => {
         if (r !== row) r.classList.remove('show');
       });
       document.querySelectorAll('.ca-toggle[aria-expanded="true"]').forEach(b => {
         if (b !== btn) {
+          const bHas = b.dataset.hasAction === '1';
           b.setAttribute('aria-expanded', 'false');
-          // Nếu button đó có preview, giữ nhãn "Xem chi tiết", ngược lại "Cập nhật"
-          const hasPreview = !!b.closest('td').querySelector('.ca-preview');
-          b.textContent = hasPreview ? 'Xem chi tiết' : 'Cập nhật';
+          b.textContent = bHas ? 'Xem chi tiết' : 'Cập nhật';
         }
       });
 
@@ -333,13 +279,13 @@
         const willShow = !row.classList.contains('show');
         row.classList.toggle('show', willShow);
         btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
-        btn.textContent = willShow ? 'Đóng' : (btn.closest('td').querySelector('.ca-preview') ? 'Xem chi tiết' : 'Cập nhật');
+        btn.textContent = willShow ? 'Đóng' : (hasAction ? 'Xem chi tiết' : 'Cập nhật');
         if (willShow) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     });
 
     function askPwdAndConfirm(form) {
-      const id  = form.dataset.id;
+      const id = form.dataset.id;
       const pwd = prompt(`Nhập mật khẩu để xoá bài đo #${id}:`);
       if (!pwd) return false;
       form.querySelector('input[name="password"]').value = pwd;
