@@ -75,6 +75,19 @@
     .ca-actions { display:flex; gap:.5rem; align-items:center; }
     .ca-hint { font-size:.8rem; color:#6b7280; }
 
+    /* ====== Preview trong cột Hành động ====== */
+    .ca-preview {
+      display:flex; flex-direction:column; gap:.2rem; font-size:.85rem; color:#111827;
+    }
+    .ca-preview small { color:#6b7280; }
+    .badge-status{
+      display:inline-block; padding:.15rem .5rem; border-radius:9999px; font-weight:600; font-size:.75rem;
+      background:#e5e7eb;
+    }
+    .badge-status[data-s="open"]{ background:#dbeafe; }
+    .badge-status[data-s="in_progress"]{ background:#fde68a; }
+    .badge-status[data-s="done"]{ background:#bbf7d0; }
+
     @media (max-width: 1200px) {
       th, td { font-size: .9rem; padding: .45rem .6rem; }
       .extras { gap: .35rem; }
@@ -125,7 +138,8 @@
       <col>
       <col style="width:16%">
       <col style="width:8%">
-      <col style="width:14%">
+      <col style="width:18%"> <!-- tăng 1 chút cho preview -->
+      <col style="width:8%">
       <col style="width:6%">
     </colgroup>
 
@@ -148,7 +162,8 @@
 
     <tbody>
       {% for r in rows %}
-        <tr>
+        {% set a = r.action %}
+        <tr id="m-{{ r.id }}">
           <td class="text-center">{{ r.id }}</td>
           <td>{{ r.item_code or '' }}</td>
 
@@ -196,14 +211,35 @@
             {% endif %}
           </td>
 
+          <!-- Cột Hành động: preview + nút -->
           <td>
-            <button
-              type="button"
-              class="btn btn-outline-primary btn-sm ca-toggle"
-              data-mid="{{ r.id }}"
-              aria-expanded="false">
-              Cập nhật
-            </button>
+            {% if a %}
+              <div class="ca-preview mb-2">
+                <div><strong>#{{ a.seq_no or '—' }}</strong> • <span>{{ a.action }}</span></div>
+                <div>
+                  <small>Owner: {{ a.owner or '—' }}</small>
+                  &nbsp;•&nbsp;
+                  <small>Due: {{ a.due_date and a.due_date.strftime('%Y-%m-%d') or '—' }}</small>
+                  &nbsp;•&nbsp;
+                  <span class="badge-status" data-s="{{ a.status }}">{{ a.status|replace('_',' ')|title }}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="btn btn-outline-primary btn-sm ca-toggle"
+                data-mid="{{ r.id }}"
+                aria-expanded="false">
+                Xem chi tiết
+              </button>
+            {% else %}
+              <button
+                type="button"
+                class="btn btn-outline-primary btn-sm ca-toggle"
+                data-mid="{{ r.id }}"
+                aria-expanded="false">
+                Cập nhật
+              </button>
+            {% endif %}
           </td>
 
           <td class="text-muted">{{ r.created_at | fmt_dt }}</td>
@@ -229,30 +265,32 @@
                 <div class="ca-grid">
                   <div>
                     <label class="form-label mb-1">STT</label>
-                    <input type="number" name="seq_no" class="form-control form-control-sm" placeholder="#">
+                    <input type="number" name="seq_no" class="form-control form-control-sm" placeholder="#" value="{{ a and a.seq_no or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Hành động</label>
-                    <input name="action" class="form-control form-control-sm" placeholder="Mô tả hành động cần làm" required>
+                    <input name="action" class="form-control form-control-sm" placeholder="Mô tả hành động cần làm" required value="{{ a and a.action or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Người phụ trách</label>
-                    <input name="owner" class="form-control form-control-sm" placeholder="VD: Minh/QA">
+                    <input name="owner" class="form-control form-control-sm" placeholder="VD: Minh/QA" value="{{ a and a.owner or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Thời hạn</label>
-                    <input type="date" name="due_date" class="form-control form-control-sm">
+                    <input type="date" name="due_date" class="form-control form-control-sm"
+                           value="{{ a and a.due_date and a.due_date.strftime('%Y-%m-%d') or '' }}">
                   </div>
 
                   <div>
                     <label class="form-label mb-1">Tình trạng</label>
                     <select name="status" class="form-select form-select-sm">
-                      <option value="open">Open</option>
-                      <option value="in_progress">In progress</option>
-                      <option value="done">Done</option>
+                      {% set st = a and a.status or 'open' %}
+                      <option value="open" {{ 'selected' if st=='open' else '' }}>Open</option>
+                      <option value="in_progress" {{ 'selected' if st=='in_progress' else '' }}>In progress</option>
+                      <option value="done" {{ 'selected' if st=='done' else '' }}>Done</option>
                     </select>
                   </div>
 
@@ -283,14 +321,19 @@
         if (r !== row) r.classList.remove('show');
       });
       document.querySelectorAll('.ca-toggle[aria-expanded="true"]').forEach(b => {
-        if (b !== btn) b.setAttribute('aria-expanded', 'false'), b.textContent = 'Cập nhật';
+        if (b !== btn) {
+          b.setAttribute('aria-expanded', 'false');
+          // Nếu button đó có preview, giữ nhãn "Xem chi tiết", ngược lại "Cập nhật"
+          const hasPreview = !!b.closest('td').querySelector('.ca-preview');
+          b.textContent = hasPreview ? 'Xem chi tiết' : 'Cập nhật';
+        }
       });
 
       if (row) {
         const willShow = !row.classList.contains('show');
         row.classList.toggle('show', willShow);
         btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
-        btn.textContent = willShow ? 'Đóng' : 'Cập nhật';
+        btn.textContent = willShow ? 'Đóng' : (btn.closest('td').querySelector('.ca-preview') ? 'Xem chi tiết' : 'Cập nhật');
         if (willShow) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     });
