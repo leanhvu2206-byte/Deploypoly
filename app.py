@@ -648,7 +648,13 @@ def list_measurements():
             for a in cur.fetchall():
                 actions_by_mid.setdefault(a["measurement_id"], []).append(a)
 
+        # ✅ Bước 1: gắn hành động mới nhất (nếu có) vào từng row
+        for r in rows:
+            acts = actions_by_mid.get(r["id"]) or []
+            r["action"] = acts[-1] if acts else None
+
     return render_template("measurements.html", rows=rows, q=q, actions_by_mid=actions_by_mid)
+
 
 
 @app.route("/measurements/history")
@@ -1099,7 +1105,7 @@ def upsert_action(mid: int):
         """, (mid, seq_no, action_txt, owner, due_date, status))
 
     flash("Đã lưu hành động khắc phục.", "success")
-    return redirect(url_for("list_measurements"))
+    return redirect(url_for("list_measurements") + f"#m-{mid}")
 
 # ===================== Run =====================
 if __name__ == "__main__":
