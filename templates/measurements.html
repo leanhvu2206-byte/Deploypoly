@@ -57,9 +57,19 @@
       margin-top: .15rem; font-size: .9em; color: #374151;
     }
 
-    /* ====== Khối cập nhật hành động ====== */
-    .ca-wrap { display: none; margin-top: .5rem; }
-    .ca-wrap.show { display: block; }
+    /* ====== Hàng chứa form cập nhật ====== */
+    .ca-row { display: none; }
+    .ca-row.show { display: table-row; }
+    .ca-row > td {
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 1rem;
+    }
+    .ca-card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: .75rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,.06); padding: .75rem;
+    }
     .ca-grid { display: grid; gap: .5rem; grid-template-columns: 70px 1fr 180px 160px 150px auto; }
     .ca-grid .form-control, .ca-grid .form-select { height: calc(1.5em + .5rem + 2px); padding: .25rem .5rem; }
     .ca-actions { display:flex; gap:.5rem; align-items:center; }
@@ -115,7 +125,7 @@
       <col>
       <col style="width:16%">
       <col style="width:8%">
-      <col style="width:14%">  <!-- NEW: Hành động -->
+      <col style="width:14%">
       <col style="width:6%">
     </colgroup>
 
@@ -130,7 +140,7 @@
         <th>Extras</th>
         <th>Người đo / Khu vực / Ghi chú</th>
         <th>Verdict</th>
-        <th>Hành động</th>   <!-- NEW -->
+        <th>Hành động</th>
         <th>Thời gian</th>
         <th></th>
       </tr>
@@ -186,18 +196,37 @@
             {% endif %}
           </td>
 
-          <!-- ===== NEW: Cập nhật hành động cho mã hàng/bài đo ===== -->
           <td>
             <button
               type="button"
               class="btn btn-outline-primary btn-sm ca-toggle"
-              data-mid="{{ r.id }}">
+              data-mid="{{ r.id }}"
+              aria-expanded="false">
               Cập nhật
             </button>
+          </td>
 
-            <div class="ca-wrap" id="ca-{{ r.id }}">
+          <td class="text-muted">{{ r.created_at | fmt_dt }}</td>
+
+          <td>
+            <form
+              method="post"
+              action="{{ url_for('delete_measurement', mid=r.id) }}"
+              class="d-inline"
+              data-id="{{ r.id }}"
+              onsubmit="return askPwdAndConfirm(this);">
+              <input type="hidden" name="password" value="">
+              <button type="submit" class="btn btn-outline-danger btn-sm">Xoá</button>
+            </form>
+          </td>
+        </tr>
+
+        <!-- Hàng mở rộng chứa form cập nhật -->
+        <tr id="carow-{{ r.id }}" class="ca-row">
+          <td colspan="12">
+            <div class="ca-card">
               <form method="post" action="{{ url_for('upsert_action', mid=r.id) }}">
-                <div class="ca-grid mt-2">
+                <div class="ca-grid">
                   <div>
                     <label class="form-label mb-1">STT</label>
                     <input type="number" name="seq_no" class="form-control form-control-sm" placeholder="#">
@@ -235,34 +264,35 @@
               </form>
             </div>
           </td>
-          <!-- ===== /NEW ===== -->
-
-          <td class="text-muted">{{ r.created_at | fmt_dt }}</td>
-
-          <td>
-            <form
-              method="post"
-              action="{{ url_for('delete_measurement', mid=r.id) }}"
-              class="d-inline"
-              data-id="{{ r.id }}"
-              onsubmit="return askPwdAndConfirm(this);">
-              <input type="hidden" name="password" value="">
-              <button type="submit" class="btn btn-outline-danger btn-sm">Xoá</button>
-            </form>
-          </td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
 
   <script>
-    // Toggle form cập nhật
+    // Toggle mở/đóng hàng form cập nhật
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.ca-toggle');
       if (!btn) return;
-      const id = btn.dataset.mid;
-      const box = document.getElementById('ca-' + id);
-      if (box) box.classList.toggle('show');
+
+      const id  = btn.dataset.mid;
+      const row = document.getElementById('carow-' + id);
+
+      // Đóng các hàng khác (nếu muốn chỉ mở 1 cái)
+      document.querySelectorAll('.ca-row.show').forEach(r => {
+        if (r !== row) r.classList.remove('show');
+      });
+      document.querySelectorAll('.ca-toggle[aria-expanded="true"]').forEach(b => {
+        if (b !== btn) b.setAttribute('aria-expanded', 'false'), b.textContent = 'Cập nhật';
+      });
+
+      if (row) {
+        const willShow = !row.classList.contains('show');
+        row.classList.toggle('show', willShow);
+        btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+        btn.textContent = willShow ? 'Đóng' : 'Cập nhật';
+        if (willShow) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     });
 
     function askPwdAndConfirm(form) {
