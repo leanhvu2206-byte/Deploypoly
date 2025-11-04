@@ -7,7 +7,7 @@
       border-collapse: separate;
       border-spacing: 0 6px;
       font-variant-numeric: tabular-nums;
-      table-layout: auto; /* Cho phép bảng tự giãn */
+      table-layout: auto;
     }
     th, td {
       padding: .55rem .75rem;
@@ -17,50 +17,30 @@
       word-wrap: break-word;
       line-height: 1.3;
     }
-    th {
-      white-space: normal !important;
-      overflow: visible !important;
-      text-align: center;
-    }
+    th { text-align: center; }
     .text-end { text-align: right; }
     .text-muted { color: #6b7280; }
 
-    /* ====== Chips chung (dùng cho Actuals & Extras) ====== */
+    /* ====== Chips (Actuals & Extras) ====== */
     .chips-col { display: flex; flex-direction: column; gap: .4rem; }
     .extras { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: flex-start; }
-
     .chip{
-      display: inline-flex;
-      align-items: center;
-      gap: .35rem;
-      padding: .3rem .55rem;
-      border: 1px solid #e5e7eb;
-      border-radius: 9999px;
-      background: #fff;
-      font-size: .83rem;
-      line-height: 1.2;
-      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: .35rem;
+      padding: .3rem .55rem; border: 1px solid #e5e7eb; border-radius: 9999px;
+      background: #fff; font-size: .83rem; line-height: 1.2; white-space: nowrap;
     }
     .chip__name{ font-weight: 600; }
     .chip__tol{ color: #6b7280; margin-left: .15rem; }
     .chip__badge{
       font-weight: 700; font-size: .75rem; padding: .1rem .45rem; border-radius: 9999px; background: #e5e7eb;
     }
-    /* màu PASS/FAIL */
     .chip--pass{ border-color: #a7f3d0; background: #ecfdf5; }
     .chip--fail{ border-color: #fecaca; background: #fef2f2; }
 
     /* ====== Verdict tổng ====== */
     .pill {
-      display: inline-block;
-      padding: .4rem .8rem;
-      border-radius: 9999px;
-      font-weight: 700;
-      font-size: .8rem;
-      line-height: 1;
-      color: #fff;
-      text-align: center;
-      min-width: 70px;
+      display: inline-block; padding: .4rem .8rem; border-radius: 9999px;
+      font-weight: 700; font-size: .8rem; line-height: 1; color: #fff; text-align: center; min-width: 70px;
       box-shadow: 0 1px 2px rgba(0,0,0,.15);
     }
     .pill--pass { background: linear-gradient(135deg, #16a34a, #22c55e); }
@@ -77,9 +57,21 @@
       margin-top: .15rem; font-size: .9em; color: #374151;
     }
 
+    /* ====== Khối cập nhật hành động ====== */
+    .ca-wrap { display: none; margin-top: .5rem; }
+    .ca-wrap.show { display: block; }
+    .ca-grid { display: grid; gap: .5rem; grid-template-columns: 70px 1fr 180px 160px 150px auto; }
+    .ca-grid .form-control, .ca-grid .form-select { height: calc(1.5em + .5rem + 2px); padding: .25rem .5rem; }
+    .ca-actions { display:flex; gap:.5rem; align-items:center; }
+    .ca-hint { font-size:.8rem; color:#6b7280; }
+
     @media (max-width: 1200px) {
       th, td { font-size: .9rem; padding: .45rem .6rem; }
       .extras { gap: .35rem; }
+      .ca-grid { grid-template-columns: 60px 1fr 140px 140px 140px auto; }
+    }
+    @media (max-width: 768px) {
+      .ca-grid { grid-template-columns: 1fr; }
     }
   </style>
 
@@ -90,19 +82,13 @@
 
   <form class="row g-2 mb-3" method="get">
     <div class="col-auto">
-      <input
-        class="form-control"
-        name="q"
-        placeholder="Tìm theo tiêu đề hoặc mã hàng..."
-        value="{{ q or '' }}"
-      >
+      <input class="form-control" name="q" placeholder="Tìm theo tiêu đề hoặc mã hàng..." value="{{ q or '' }}">
     </div>
     <div class="col-auto">
       <button class="btn btn-outline-primary" type="submit">Tìm</button>
     </div>
   </form>
 
-  {# Macro render chip cho ID/OD1/OD2 #}
   {% macro dim_chip(name, size, tol, actual, verdict) -%}
     {%- set status = verdict -%}
     <span class="chip {{ status==1 and 'chip--pass' or (status==0 and 'chip--fail' or '') }}">
@@ -120,17 +106,17 @@
 
   <table class="table table-striped table-sm align-middle">
     <colgroup>
-      <col style="width:5%">   <!-- ID -->
-      <col style="width:10%">  <!-- Mã hàng -->
-      <col style="width:16%">  <!-- ID (size/tol) -->
-      <col style="width:16%">  <!-- OD1 (size/tol) -->
-      <col style="width:16%">  <!-- OD2 (size/tol) -->
-      <col style="width:20%">  <!-- Actuals -->
-      <col>                    <!-- Extras -->
-      <col style="width:16%">  <!-- Người đo / KV / Ghi chú -->
-      <col style="width:8%">   <!-- Verdict -->
-      <col style="width:10%">  <!-- Thời gian -->
-      <col style="width:5%">   <!-- Xóa -->
+      <col style="width:5%">
+      <col style="width:10%">
+      <col style="width:12%">
+      <col style="width:12%">
+      <col style="width:12%">
+      <col style="width:18%">
+      <col>
+      <col style="width:16%">
+      <col style="width:8%">
+      <col style="width:14%">  <!-- NEW: Hành động -->
+      <col style="width:6%">
     </colgroup>
 
     <thead>
@@ -144,6 +130,7 @@
         <th>Extras</th>
         <th>Người đo / Khu vực / Ghi chú</th>
         <th>Verdict</th>
+        <th>Hành động</th>   <!-- NEW -->
         <th>Thời gian</th>
         <th></th>
       </tr>
@@ -165,7 +152,6 @@
             {{ r.od2_size or '—' }} {% if r.od2_tol %}({{ r.od2_tol }}){% endif %}
           </td>
 
-          <!-- Actuals: kẻ ô & tô màu PASS/FAIL -->
           <td class="text-center">
             <div class="chips-col">
               {{ dim_chip('ID',  r.id_size,  r.id_tol,  r.actual_id,  r.verdict_id) }}
@@ -174,10 +160,7 @@
             </div>
           </td>
 
-          <!-- Extras: ô + màu PASS/FAIL cho từng hạng mục -->
-          <td>
-            {{ r.extra_checks | render_extras | safe }}
-          </td>
+          <td>{{ r.extra_checks | render_extras | safe }}</td>
 
           <td>
             <div class="who">
@@ -203,6 +186,57 @@
             {% endif %}
           </td>
 
+          <!-- ===== NEW: Cập nhật hành động cho mã hàng/bài đo ===== -->
+          <td>
+            <button
+              type="button"
+              class="btn btn-outline-primary btn-sm ca-toggle"
+              data-mid="{{ r.id }}">
+              Cập nhật
+            </button>
+
+            <div class="ca-wrap" id="ca-{{ r.id }}">
+              <form method="post" action="{{ url_for('upsert_action', mid=r.id) }}">
+                <div class="ca-grid mt-2">
+                  <div>
+                    <label class="form-label mb-1">STT</label>
+                    <input type="number" name="seq_no" class="form-control form-control-sm" placeholder="#">
+                  </div>
+
+                  <div>
+                    <label class="form-label mb-1">Hành động</label>
+                    <input name="action" class="form-control form-control-sm" placeholder="Mô tả hành động cần làm" required>
+                  </div>
+
+                  <div>
+                    <label class="form-label mb-1">Người phụ trách</label>
+                    <input name="owner" class="form-control form-control-sm" placeholder="VD: Minh/QA">
+                  </div>
+
+                  <div>
+                    <label class="form-label mb-1">Thời hạn</label>
+                    <input type="date" name="due_date" class="form-control form-control-sm">
+                  </div>
+
+                  <div>
+                    <label class="form-label mb-1">Tình trạng</label>
+                    <select name="status" class="form-select form-select-sm">
+                      <option value="open">Open</option>
+                      <option value="in_progress">In progress</option>
+                      <option value="done">Done</option>
+                    </select>
+                  </div>
+
+                  <div class="ca-actions align-self-end">
+                    <button class="btn btn-primary btn-sm" type="submit">Lưu</button>
+                    <span class="ca-hint">Chỉ mở form khi cần cập nhật</span>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </td>
+          <!-- ===== /NEW ===== -->
+
           <td class="text-muted">{{ r.created_at | fmt_dt }}</td>
 
           <td>
@@ -211,8 +245,7 @@
               action="{{ url_for('delete_measurement', mid=r.id) }}"
               class="d-inline"
               data-id="{{ r.id }}"
-              onsubmit="return askPwdAndConfirm(this);"
-            >
+              onsubmit="return askPwdAndConfirm(this);">
               <input type="hidden" name="password" value="">
               <button type="submit" class="btn btn-outline-danger btn-sm">Xoá</button>
             </form>
@@ -223,6 +256,15 @@
   </table>
 
   <script>
+    // Toggle form cập nhật
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.ca-toggle');
+      if (!btn) return;
+      const id = btn.dataset.mid;
+      const box = document.getElementById('ca-' + id);
+      if (box) box.classList.toggle('show');
+    });
+
     function askPwdAndConfirm(form) {
       const id  = form.dataset.id;
       const pwd = prompt(`Nhập mật khẩu để xoá bài đo #${id}:`);

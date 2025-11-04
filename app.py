@@ -81,7 +81,20 @@ def init_db():
     -- Index ngày theo múi giờ VN để nhóm/ngày nhanh
     CREATE INDEX IF NOT EXISTS idx_measurements_created_at_vn_date
       ON measurements ( ((created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) );
-    """
+    
+    CREATE TABLE IF NOT EXISTS corrective_actions (
+        id SERIAL PRIMARY KEY,
+        measurement_id INTEGER NOT NULL REFERENCES measurements(id) ON DELETE CASCADE,
+        seq_no INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        owner TEXT,
+        due_date DATE,
+        status TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ca_measurement ON corrective_actions(measurement_id);"""
+
+
     with get_db() as con, con.cursor() as cur:
         cur.execute(ddl)
         cur.execute("SELECT id FROM users WHERE username = %s", ("admin",))
@@ -633,8 +646,21 @@ def list_measurements():
             """, (f"%{q}%", f"%{q}%"))
         else:
             cur.execute("SELECT * FROM measurements ORDER BY created_at DESC")
-        rows = cur.fetchall()
-    return render_template("measurements.html", rows=rows, q=q)
+        rows = cur.fetchall()   
+         # --- Kéo kèm các hành động cho các measurement đang hiển thị ---
+    actions_by_mid = {}
+    if rows:
+        ids = [r["id"] for r in rows]
+        cur.execute("""
+            SELECT id, measurement_id, seq_no, action, owner, due_date, status, created_at
+            FROM corrective_actions
+            WHERE measurement_id = ANY(%s)
+            ORDER BY measurement_id, seq_no, id
+        """, (ids,))
+        for a in cur.fetchall():
+            actions_by_mid.setdefault(a["measurement_id"], []).append(a)
+
+    return render_template("measurements.html", rows=rows, q=q, actions_by_mid=actions_by_mid)
 
 
 @app.route("/measurements/history")
@@ -1049,6 +1075,35 @@ def delete_measurement(mid):
     flash(f"Đã xoá bài đo #{mid}.", "success")
     return redirect(url_for("list_measurements"))
 
+@app.route("/measurements/<int:mid>/actions", methods=["POST"])
+@login_required
+def upsert_action(mid):
+    seq_no = request.form.get("seq_no", "").strip()
+    action_text = (request.form.get("action") or "").strip()
+    owner = (request.form.get("owner") or "").strip()
+    due_date = (request.form.get("due_date") or "").strip()  # YYYY-MM-DD
+    status = (request.form.get("status") or "").strip()
+
+    # validate tối thiểu
+    try:
+        seq_no_i = int(seq_no)
+    except Exception:
+        flash("Số thứ tự phải là số nguyên.", "danger")
+        return redirect(url_for("list_measurements"))
+
+    if not action_text:
+        flash("Vui lòng nhập nội dung Hành động.", "danger")
+        return redirect(url_for("list_measurements"))
+
+    with get_db() as con, con.cursor() as cur:
+        cur.execute("""
+            INSERT INTO corrective_actions (measurement_id, seq_no, action, owner, due_date, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (mid, seq_no_i, action_text, owner or None, (due_date or None), status or None))
+
+    flash(f"Đã cập nhật hành động cho bài đo #{mid}.", "success")
+    # quay lại danh sách và cuộn tới hàng vừa thao tác (anchor)
+    return redirect(url_for("list_measurements") + f"#m{mid}")
 
 # ===================== Run =====================
 if __name__ == "__main__":
