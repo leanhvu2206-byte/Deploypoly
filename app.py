@@ -109,6 +109,42 @@ def fmt_dt(value):
     except Exception:
         return str(value)
 
+# ===================== FILTER HELPERS =====================
+def build_filters(request_args):
+    """Sinh điều kiện WHERE động + tham số dict cho các truy vấn dashboard."""
+    where = ["1=1"]
+    p = {}  # dict parameters cho psycopg
+
+    # Lấy các tham số từ query string (?start=...&end=...&area=...)
+    start = request_args.get("start")
+    end   = request_args.get("end")
+    area  = (request_args.get("area") or "").strip()
+    item  = (request_args.get("item_code") or "").strip()
+    err   = (request_args.get("error") or "").strip()
+
+    # Các điều kiện lọc
+    if start:
+        where.append("(created_at::date >= %(start)s)")
+        p["start"] = start
+    if end:
+        where.append("(created_at::date <= %(end)s)")
+        p["end"] = end
+    if area:
+        where.append("(COALESCE(area,'') ILIKE %(area)s)")
+        p["area"] = f"%{area}%"
+    if item:
+        where.append("(COALESCE(item_code,'') ILIKE %(item)s)")
+        p["item"] = f"%{item}%"
+    if err:
+        where.append("""
+            EXISTS (
+              SELECT 1 FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
+              WHERE COALESCE(x->>'name','') ILIKE %(err)s
+            )
+        """)
+        p["err"] = f"%{err}%"
+
+    return " AND ".join(where), p
 
 # ---- Các filter xử lý JSON extra_checks: chấp nhận dict hoặc str ----
 def _ec_to_obj(extra_checks):
@@ -430,49 +466,55 @@ def dashboard():
     area       = (request.args.get("area") or "").strip()
     err        = (request.args.get("err") or "").strip().lower()  # '', id, od1, od2, extras
 
-    # Xây WHERE chung
-    where = ["1=1"]
-    params = []
+    # Helper: build WHERE + params (named) từ args
+    def _build_filters(include_dates: bool = True):
+        where = ["1=1"]
+        p: dict = {}
 
-    # Ngày
-    if start_date:
-        where.append("(created_at::date >= %s)")
-        params.append(start_date)
-    if end_date:
-        where.append("(created_at::date <= %s)")
-        params.append(end_date)
+        # Ngày
+        if include_dates and start_date:
+            where.append("(created_at::date >= %(start)s)")
+            p["start"] = start_date
+        if include_dates and end_date:
+            where.append("(created_at::date <= %(end)s)")
+            p["end"] = end_date
 
-    # Khu vực
-    if area:
-        where.append("(area = %s)")
-        params.append(area)
+        # Khu vực
+        if area:
+            where.append("(area = %(area)s)")
+            p["area"] = area
 
-    # Lọc theo loại lỗi (chỉ lấy các bản ghi có NG cho loại đó)
-    # Lưu ý: 'extras' dựa trên verdict_items trong JSONB
-    if err == "id":
-        where.append("(verdict_id = FALSE)")
-    elif err == "od1":
-        where.append("(verdict_od1 = FALSE)")
-    elif err == "od2":
-        where.append("(verdict_od2 = FALSE)")
-    elif err == "extras":
-        where.append("""EXISTS (
-            SELECT 1 FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
-            WHERE x->>'pass' = 'false'
-        )""")
+        # Lọc theo loại lỗi (chỉ lấy các bản ghi có NG cho loại đó)
+        # 'extras' dựa trên verdict_items trong JSONB
+        if err == "id":
+            where.append("(verdict_id = FALSE)")
+        elif err == "od1":
+            where.append("(verdict_od1 = FALSE)")
+        elif err == "od2":
+            where.append("(verdict_od2 = FALSE)")
+        elif err == "extras":
+            where.append("""
+                EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
+                  WHERE x->>'pass' = 'false'
+                )
+            """)
 
-    where_sql = " AND ".join(where)
-    if '%s' not in where_sql:
-     params = []
+        return " AND ".join(where), p
+
+    # where/p đầy đủ và where/p KHÔNG chứa điều kiện ngày (dùng cho chart theo giờ)
+    where_sql, p = _build_filters(include_dates=True)
+    where_sql_no_date, p_no_date = _build_filters(include_dates=False)
 
     with get_db() as con, con.cursor() as cur:
         # Danh sách areas cho combobox
-        cur.execute(f"SELECT DISTINCT area FROM measurements WHERE area IS NOT NULL AND area<>'' ORDER BY area")
+        cur.execute("SELECT DISTINCT area FROM measurements WHERE area IS NOT NULL AND area<>'' ORDER BY area")
         areas = [r["area"] for r in cur.fetchall()]
 
         # Tổng số bài đo (theo filter)
-        cur.execute(f"SELECT COUNT(*) AS cnt FROM measurements WHERE {where_sql}", tuple(params))
-        total = cur.fetchone()["cnt"] or 0
+        cur.execute(f"SELECT COUNT(*) AS cnt FROM measurements WHERE {where_sql}", p)
+        total = (cur.fetchone() or {}).get("cnt", 0) or 0
 
         # 5 gần nhất (theo filter)
         cur.execute(f"""
@@ -482,46 +524,46 @@ def dashboard():
             WHERE {where_sql}
             ORDER BY created_at DESC
             LIMIT 5
-        """, tuple(params))
+        """, p)
         recent = cur.fetchall()
 
         # OK/NG (theo filter)
         cur.execute(f"""
             SELECT
-              SUM(CASE WHEN verdict_overall = TRUE THEN 1 ELSE 0 END) AS ok_cnt,
+              SUM(CASE WHEN verdict_overall = TRUE  THEN 1 ELSE 0 END) AS ok_cnt,
               SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng_cnt
             FROM measurements
             WHERE verdict_overall IS NOT NULL AND {where_sql}
-        """, tuple(params))
+        """, p)
         row = cur.fetchone() or {}
         ok_cnt = row.get("ok_cnt") or 0
         ng_cnt = row.get("ng_cnt") or 0
 
-        # Theo giờ hôm nay (theo filter + ngày hôm nay trong TZ VN)
-        # Tách filter ngày để không “đè” điều kiện hôm nay
-        where_hour = [w for w in where if "created_at::date" not in w]
-        params_hour = [p for (w,p) in zip(where, params) if "created_at::date" not in w]
+        # Theo giờ hôm nay (Asia/Ho_Chi_Minh) + các filter KHÔNG gồm ngày
         cur.execute(f"""
             SELECT TO_CHAR(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24') AS hh, COUNT(*) AS c
             FROM measurements
-            WHERE ((created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = CURRENT_DATE)
-              AND {' AND '.join(where_hour)}
-            GROUP BY hh ORDER BY hh
-        """, tuple(params_hour))
+            WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = CURRENT_DATE
+              AND {where_sql_no_date}
+            GROUP BY hh
+            ORDER BY hh
+        """, p_no_date)
         by_hour = {f"{h:02d}": 0 for h in range(24)}
         for r in cur.fetchall():
-            by_hour[r["hh"]] = r["c"]
+            if r["hh"] is not None:
+                by_hour[r["hh"]] = r["c"]
         hours_labels = list(by_hour.keys())
         hours_values = list(by_hour.values())
 
-        # 14 ngày gần nhất (theo filter)
+        # 14 ngày gần nhất (theo filter đầy đủ)
         cur.execute(f"""
             SELECT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d, COUNT(*) AS c
             FROM measurements
             WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= CURRENT_DATE - INTERVAL '13 days'
               AND {where_sql}
-            GROUP BY d ORDER BY d
-        """, tuple(params))
+            GROUP BY d
+            ORDER BY d
+        """, p)
         got = {r["d"].isoformat(): r["c"] for r in cur.fetchall()}
         today = datetime.now(TZ_VN).date()
         days_labels, days_values = [], []
@@ -541,25 +583,26 @@ def dashboard():
               WHERE area IS NOT NULL AND area<>'' AND {where_sql}
               GROUP BY area
             )
-            SELECT area, ng, total, CASE WHEN total>0 THEN ng::float*100/total ELSE 0 END AS rate
+            SELECT area, ng, total,
+                   CASE WHEN total>0 THEN ng::float*100/total ELSE 0 END AS rate
             FROM base
             ORDER BY rate DESC, ng DESC
             LIMIT 1
-        """, tuple(params))
+        """, p)
         w = cur.fetchone()
         worst_area_name = w["area"] if w else None
-        worst_area_rate = w["rate"] if w else 0.0
+        worst_area_rate = float(w["rate"]) if w and w["rate"] is not None else 0.0
 
-        # ---- Kích thước lỗi cao nhất (ID/OD1/OD2/Extras) theo filter ----
+        # ---- Kích thước lỗi cao nhất (ID/OD1/OD2/EXTRAS) theo filter ----
         cur.execute(f"""
             WITH dim_cnt AS (
-              SELECT 'ID'  AS dim, COUNT(*) AS ng FROM measurements WHERE {where_sql} AND verdict_id  = FALSE
+              SELECT 'ID'     AS dim, COUNT(*) AS ng FROM measurements WHERE {where_sql} AND verdict_id  = FALSE
               UNION ALL
-              SELECT 'OD1' AS dim, COUNT(*) AS ng FROM measurements WHERE {where_sql} AND verdict_od1 = FALSE
+              SELECT 'OD1'               , COUNT(*)       FROM measurements WHERE {where_sql} AND verdict_od1 = FALSE
               UNION ALL
-              SELECT 'OD2' AS dim, COUNT(*) AS ng FROM measurements WHERE {where_sql} AND verdict_od2 = FALSE
+              SELECT 'OD2'               , COUNT(*)       FROM measurements WHERE {where_sql} AND verdict_od2 = FALSE
               UNION ALL
-              SELECT 'EXTRAS' AS dim, COUNT(*) AS ng
+              SELECT 'EXTRAS'            , COUNT(*)
               FROM measurements
               WHERE {where_sql}
                 AND EXISTS (
@@ -575,29 +618,33 @@ def dashboard():
             FROM dim_cnt, dim_total
             ORDER BY rate DESC, ng DESC
             LIMIT 1
-        """, tuple(params))
+        """, p)
         drow = cur.fetchone()
         worst_dim_name = drow["dim"] if drow else None
-        worst_dim_rate = drow["rate"] if drow else 0.0
+        worst_dim_rate = float(drow["rate"]) if drow and drow["rate"] is not None else 0.0
 
         # ---- Top 5 lỗi phổ biến (đếm) theo filter ----
-        # Gộp ID/OD1/OD2 + Extras thành nhãn 'ID','OD1','OD2','EXTRAS'
         cur.execute(f"""
             WITH errs AS (
-              SELECT 'ID' AS k FROM measurements WHERE {where_sql} AND verdict_id  = FALSE
+              SELECT 'ID'     AS k FROM measurements WHERE {where_sql} AND verdict_id  = FALSE
               UNION ALL
-              SELECT 'OD1'     FROM measurements WHERE {where_sql} AND verdict_od1 = FALSE
+              SELECT 'OD1'            FROM measurements WHERE {where_sql} AND verdict_od1 = FALSE
               UNION ALL
-              SELECT 'OD2'     FROM measurements WHERE {where_sql} AND verdict_od2 = FALSE
+              SELECT 'OD2'            FROM measurements WHERE {where_sql} AND verdict_od2 = FALSE
               UNION ALL
-              SELECT 'EXTRAS'  FROM measurements
-              WHERE {where_sql} AND EXISTS (
-                SELECT 1 FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
-                WHERE x->>'pass' = 'false'
-              )
+              SELECT 'EXTRAS'         FROM measurements
+              WHERE {where_sql}
+                AND EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
+                  WHERE x->>'pass' = 'false'
+                )
             )
-            SELECT k, COUNT(*) AS c FROM errs GROUP BY k ORDER BY c DESC, k ASC LIMIT 5
-        """, tuple(params))
+            SELECT k, COUNT(*) AS c
+            FROM errs
+            GROUP BY k
+            ORDER BY c DESC, k ASC
+            LIMIT 5
+        """, p)
         _err = cur.fetchall()
         top_err_labels = [r["k"] for r in _err]
         top_err_counts = [r["c"] for r in _err]
@@ -618,10 +665,10 @@ def dashboard():
             WHERE total >= 1
             ORDER BY rate DESC, ng DESC
             LIMIT 5
-        """, tuple(params))
+        """, p)
         _sku = cur.fetchall()
         top_sku_labels = [r["item_code"] for r in _sku]
-        top_sku_rates  = [float(r["rate"]) for r in _sku]
+        top_sku_rates  = [float(r["rate"] or 0.0) for r in _sku]
 
         # ---- Top 5 khu vực lỗi cao (% NG) theo filter ----
         cur.execute(f"""
@@ -639,10 +686,10 @@ def dashboard():
             WHERE total >= 1
             ORDER BY rate DESC, ng DESC
             LIMIT 5
-        """, tuple(params))
+        """, p)
         _area = cur.fetchall()
         top_area_labels = [r["area"] for r in _area]
-        top_area_rates  = [float(r["rate"]) for r in _area]
+        top_area_rates  = [float(r["rate"] or 0.0) for r in _area]
 
     return render_template(
         "dashboard.html",
