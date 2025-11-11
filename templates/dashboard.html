@@ -1,55 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h3 class="mb-4">Dashboard</h3>
-<form class="card mb-3" method="get">
-  <div class="card-body">
-    <div class="row g-2 align-items-end">
-      <!-- Từ ngày / Đến ngày -->
-      <div class="col-md-3">
-        <label class="form-label">Từ ngày</label>
-        <input type="date" class="form-control" name="from_date"
-               value="{{ from_date|default('', true) }}">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Đến ngày</label>
-        <input type="date" class="form-control" name="to_date"
-               value="{{ to_date|default('', true) }}">
-      </div>
 
-      <!-- Line -->
-      <div class="col-md-3">
-        <label class="form-label">Line</label>
-        <select class="form-select" name="line">
-          <option value="">Tất cả</option>
-          {% for v in line_options or [] %}
-            <option value="{{ v }}" {{ 'selected' if line==v else '' }}>{{ v }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <!-- Mã lỗi / Loại lỗi -->
-      <div class="col-md-3">
-        <label class="form-label">Lỗi</label>
-        <select class="form-select" name="error_code">
-          <option value="">Tất cả</option>
-          {% for v in error_options or [] %}
-            <option value="{{ v }}" {{ 'selected' if error_code==v else '' }}>{{ v }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="col-12 d-flex gap-2 mt-2">
-        <button class="btn btn-primary" type="submit">Áp dụng</button>
-        <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Xóa lọc</a>
-      </div>
-    </div>
-  </div>
-</form>
-<script>
-  document.querySelectorAll('select[name="line"], select[name="error_code"]').forEach(el=>{
-    el.addEventListener('change', ()=> el.form.submit());
-  });
-</script>
 <!-- ====== 3 thẻ số liệu ====== -->
 <div class="row g-3">
   <div class="col-md-4">
