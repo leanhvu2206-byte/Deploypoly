@@ -424,59 +424,102 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    # ---- Lấy filter từ query ----
+    start_date = request.args.get("start_date")  # 'YYYY-MM-DD'
+    end_date   = request.args.get("end_date")
+    area       = (request.args.get("area") or "").strip()
+    err        = (request.args.get("err") or "").strip().lower()  # '', id, od1, od2, extras
+
+    # Xây WHERE chung
+    where = ["1=1"]
+    params = []
+
+    # Ngày
+    if start_date:
+        where.append("(created_at::date >= %s)")
+        params.append(start_date)
+    if end_date:
+        where.append("(created_at::date <= %s)")
+        params.append(end_date)
+
+    # Khu vực
+    if area:
+        where.append("(area = %s)")
+        params.append(area)
+
+    # Lọc theo loại lỗi (chỉ lấy các bản ghi có NG cho loại đó)
+    # Lưu ý: 'extras' dựa trên verdict_items trong JSONB
+    if err == "id":
+        where.append("(verdict_id = FALSE)")
+    elif err == "od1":
+        where.append("(verdict_od1 = FALSE)")
+    elif err == "od2":
+        where.append("(verdict_od2 = FALSE)")
+    elif err == "extras":
+        where.append("""EXISTS (
+            SELECT 1 FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
+            WHERE x->>'pass' = 'false'
+        )""")
+
+    where_sql = " AND ".join(where)
+
     with get_db() as con, con.cursor() as cur:
-        # ====== Thống kê cơ bản ======
-        cur.execute("SELECT COUNT(*) AS cnt FROM measurements")
-        total = cur.fetchone()["cnt"]
+        # Danh sách areas cho combobox
+        cur.execute(f"SELECT DISTINCT area FROM measurements WHERE area IS NOT NULL AND area<>'' ORDER BY area")
+        areas = [r["area"] for r in cur.fetchall()]
 
-        # (giữ lại nếu còn dùng chỗ khác)
-        cur.execute("SELECT AVG(value) AS avg_val FROM measurements")
-        avg_val = cur.fetchone()["avg_val"]
+        # Tổng số bài đo (theo filter)
+        cur.execute(f"SELECT COUNT(*) AS cnt FROM measurements WHERE {where_sql}", tuple(params))
+        total = cur.fetchone()["cnt"] or 0
 
-        # 5 bản ghi gần nhất
-        cur.execute("""
-            SELECT id, item_code, id_size, id_tol, od1_size, od1_tol, od2_size, od2_tol,
-                   actual_id, actual_od1, actual_od2, measured_by, area, note,
-                   verdict_overall, created_at
+        # 5 gần nhất (theo filter)
+        cur.execute(f"""
+            SELECT id, item_code, actual_id, actual_od1, actual_od2,
+                   measured_by, area, note, verdict_overall, created_at
             FROM measurements
+            WHERE {where_sql}
             ORDER BY created_at DESC
             LIMIT 5
-        """)
+        """, tuple(params))
         recent = cur.fetchall()
 
-        # OK / NG tổng
-        cur.execute("""
+        # OK/NG (theo filter)
+        cur.execute(f"""
             SELECT
-              COALESCE(SUM(CASE WHEN verdict_overall = TRUE  THEN 1 ELSE 0 END),0) AS ok_cnt,
-              COALESCE(SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END),0) AS ng_cnt
+              SUM(CASE WHEN verdict_overall = TRUE THEN 1 ELSE 0 END) AS ok_cnt,
+              SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng_cnt
             FROM measurements
-            WHERE verdict_overall IS NOT NULL
-        """)
-        row = cur.fetchone()
-        ok_cnt = row["ok_cnt"] or 0
-        ng_cnt = row["ng_cnt"] or 0
+            WHERE verdict_overall IS NOT NULL AND {where_sql}
+        """, tuple(params))
+        row = cur.fetchone() or {}
+        ok_cnt = row.get("ok_cnt") or 0
+        ng_cnt = row.get("ng_cnt") or 0
 
-        # Theo giờ (hôm nay - TZ VN)
-        by_hour = {f"{h:02d}": 0 for h in range(24)}
-        cur.execute("""
+        # Theo giờ hôm nay (theo filter + ngày hôm nay trong TZ VN)
+        # Tách filter ngày để không “đè” điều kiện hôm nay
+        where_hour = [w for w in where if "created_at::date" not in w]
+        params_hour = [p for (w,p) in zip(where, params) if "created_at::date" not in w]
+        cur.execute(f"""
             SELECT TO_CHAR(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24') AS hh, COUNT(*) AS c
             FROM measurements
-            WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = CURRENT_DATE
+            WHERE ((created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = CURRENT_DATE)
+              AND {' AND '.join(where_hour)}
             GROUP BY hh ORDER BY hh
-        """)
+        """, tuple(params_hour))
+        by_hour = {f"{h:02d}": 0 for h in range(24)}
         for r in cur.fetchall():
-            if r["hh"] is not None:
-                by_hour[r["hh"]] = r["c"]
+            by_hour[r["hh"]] = r["c"]
         hours_labels = list(by_hour.keys())
         hours_values = list(by_hour.values())
 
-        # 14 ngày gần nhất (TZ VN)
-        cur.execute("""
+        # 14 ngày gần nhất (theo filter)
+        cur.execute(f"""
             SELECT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d, COUNT(*) AS c
             FROM measurements
             WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= CURRENT_DATE - INTERVAL '13 days'
+              AND {where_sql}
             GROUP BY d ORDER BY d
-        """)
+        """, tuple(params))
         got = {r["d"].isoformat(): r["c"] for r in cur.fetchall()}
         today = datetime.now(TZ_VN).date()
         days_labels, days_values = [], []
@@ -486,137 +529,139 @@ def dashboard():
             days_labels.append(ds)
             days_values.append(got.get(ds, 0))
 
-        # ====== Khu vực lỗi cao nhất (rate %) ======
-        cur.execute("""
+        # ---- Khu vực lỗi cao nhất (tỷ lệ NG/ tổng) theo filter hiện tại ----
+        cur.execute(f"""
             WITH base AS (
               SELECT area,
-                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng,
-                     SUM(CASE WHEN verdict_overall IS NOT NULL THEN 1 ELSE 0 END) AS total
+                     COUNT(*) AS total,
+                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng
               FROM measurements
+              WHERE area IS NOT NULL AND area<>'' AND {where_sql}
               GROUP BY area
             )
-            SELECT area,
-                   ng,
-                   total,
-                   CASE WHEN total > 0 THEN 100.0 * ng / total ELSE 0 END AS rate
+            SELECT area, ng, total, CASE WHEN total>0 THEN ng::float*100/total ELSE 0 END AS rate
             FROM base
-            WHERE area IS NOT NULL AND total >= 3
-            ORDER BY rate DESC, total DESC
+            ORDER BY rate DESC, ng DESC
             LIMIT 1
-        """)
-        r = cur.fetchone()
-        worst_area_name = (r and r["area"]) or None
-        worst_area_rate = (r and r["rate"]) or 0.0
+        """, tuple(params))
+        w = cur.fetchone()
+        worst_area_name = w["area"] if w else None
+        worst_area_rate = w["rate"] if w else 0.0
 
-        # ====== Kích thước lỗi cao nhất (ID/OD1/OD2) theo rate % ======
-        cur.execute("""
-            SELECT
-              SUM(CASE WHEN verdict_id  = FALSE THEN 1 ELSE 0 END) AS fail_id,
-              SUM(CASE WHEN verdict_id  IS NOT NULL THEN 1 ELSE 0 END) AS tot_id,
-              SUM(CASE WHEN verdict_od1 = FALSE THEN 1 ELSE 0 END) AS fail_od1,
-              SUM(CASE WHEN verdict_od1 IS NOT NULL THEN 1 ELSE 0 END) AS tot_od1,
-              SUM(CASE WHEN verdict_od2 = FALSE THEN 1 ELSE 0 END) AS fail_od2,
-              SUM(CASE WHEN verdict_od2 IS NOT NULL THEN 1 ELSE 0 END) AS tot_od2
-            FROM measurements
-        """)
-        r = cur.fetchone()
-        dims = []
-        for key, label in (("id", "ID"), ("od1", "OD1"), ("od2", "OD2")):
-            fail = r[f"fail_{key}"] or 0
-            tot  = r[f"tot_{key}"] or 0
-            rate = (100.0 * fail / tot) if tot else 0.0
-            dims.append((label, rate))
-        worst_dim_name, worst_dim_rate = max(dims, key=lambda x: x[1]) if dims else (None, 0.0)
-
-        # ====== Top 5 lỗi phổ biến (gộp ID/OD1/OD2 + Extras) ======
-        # 1) lỗi ở 3 kích thước chính
-        cur.execute("""
-            SELECT 'ID'  AS name, COUNT(*) AS c FROM measurements WHERE verdict_id  = FALSE
-            UNION ALL
-            SELECT 'OD1' AS name, COUNT(*)       FROM measurements WHERE verdict_od1 = FALSE
-            UNION ALL
-            SELECT 'OD2' AS name, COUNT(*)       FROM measurements WHERE verdict_od2 = FALSE
-        """)
-        counts = {}
-        for r in cur.fetchall():
-            counts[r["name"]] = counts.get(r["name"], 0) + (r["c"] or 0)
-
-        # 2) lỗi ở hạng mục bổ sung (extra_checks.verdict_items[].pass = false)
-        cur.execute("""
-            SELECT TRIM(BOTH FROM x->>'name') AS name, COUNT(*) AS c
-            FROM measurements m
-            JOIN LATERAL jsonb_array_elements(m.extra_checks->'verdict_items') x ON TRUE
-            WHERE (x->>'pass')::boolean = FALSE
-            GROUP BY 1
-            ORDER BY c DESC
-            LIMIT 10
-        """)
-        for r in cur.fetchall():
-            nm = r["name"] or ""
-            if not nm:
-                continue
-            counts[nm] = counts.get(nm, 0) + (r["c"] or 0)
-
-        # Lấy top 5
-        top_errors = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
-        top_err_labels = [k for k, _ in top_errors]
-        top_err_counts = [v for _, v in top_errors]
-
-        # ====== Top 5 mã hàng lỗi cao (tỷ lệ %) ======
-        cur.execute("""
-            WITH b AS (
-              SELECT item_code,
-                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng,
-                     SUM(CASE WHEN verdict_overall IS NOT NULL THEN 1 ELSE 0 END) AS total
+        # ---- Kích thước lỗi cao nhất (ID/OD1/OD2/Extras) theo filter ----
+        cur.execute(f"""
+            WITH dim_cnt AS (
+              SELECT 'ID'  AS dim, COUNT(*) AS ng FROM measurements WHERE {where_sql} AND verdict_id  = FALSE
+              UNION ALL
+              SELECT 'OD1' AS dim, COUNT(*) AS ng FROM measurements WHERE {where_sql} AND verdict_od1 = FALSE
+              UNION ALL
+              SELECT 'OD2' AS dim, COUNT(*) AS ng FROM measurements WHERE {where_sql} AND verdict_od2 = FALSE
+              UNION ALL
+              SELECT 'EXTRAS' AS dim, COUNT(*) AS ng
               FROM measurements
+              WHERE {where_sql}
+                AND EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
+                  WHERE x->>'pass' = 'false'
+                )
+            ),
+            dim_total AS (
+              SELECT COUNT(*) AS total FROM measurements WHERE {where_sql}
+            )
+            SELECT dim_cnt.dim, dim_cnt.ng,
+                   CASE WHEN dim_total.total>0 THEN dim_cnt.ng::float*100/dim_total.total ELSE 0 END AS rate
+            FROM dim_cnt, dim_total
+            ORDER BY rate DESC, ng DESC
+            LIMIT 1
+        """, tuple(params))
+        drow = cur.fetchone()
+        worst_dim_name = drow["dim"] if drow else None
+        worst_dim_rate = drow["rate"] if drow else 0.0
+
+        # ---- Top 5 lỗi phổ biến (đếm) theo filter ----
+        # Gộp ID/OD1/OD2 + Extras thành nhãn 'ID','OD1','OD2','EXTRAS'
+        cur.execute(f"""
+            WITH errs AS (
+              SELECT 'ID' AS k FROM measurements WHERE {where_sql} AND verdict_id  = FALSE
+              UNION ALL
+              SELECT 'OD1'     FROM measurements WHERE {where_sql} AND verdict_od1 = FALSE
+              UNION ALL
+              SELECT 'OD2'     FROM measurements WHERE {where_sql} AND verdict_od2 = FALSE
+              UNION ALL
+              SELECT 'EXTRAS'  FROM measurements
+              WHERE {where_sql} AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(COALESCE(extra_checks->'verdict_items','[]'::jsonb)) x
+                WHERE x->>'pass' = 'false'
+              )
+            )
+            SELECT k, COUNT(*) AS c FROM errs GROUP BY k ORDER BY c DESC, k ASC LIMIT 5
+        """, tuple(params))
+        _err = cur.fetchall()
+        top_err_labels = [r["k"] for r in _err]
+        top_err_counts = [r["c"] for r in _err]
+
+        # ---- Top 5 mã hàng lỗi cao (% NG) theo filter ----
+        cur.execute(f"""
+            WITH base AS (
+              SELECT item_code,
+                     COUNT(*) AS total,
+                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng
+              FROM measurements
+              WHERE item_code IS NOT NULL AND item_code<>'' AND {where_sql}
               GROUP BY item_code
             )
             SELECT item_code,
-                   CASE WHEN total > 0 THEN 100.0 * ng / total ELSE 0 END AS rate
-            FROM b
-            WHERE item_code IS NOT NULL AND total >= 3
-            ORDER BY rate DESC, total DESC
+                   CASE WHEN total>0 THEN ng::float*100/total ELSE 0 END AS rate
+            FROM base
+            WHERE total >= 1
+            ORDER BY rate DESC, ng DESC
             LIMIT 5
-        """)
-        rows = cur.fetchall()
-        top_sku_labels = [r["item_code"] for r in rows]
-        top_sku_rates  = [r["rate"] for r in rows]
+        """, tuple(params))
+        _sku = cur.fetchall()
+        top_sku_labels = [r["item_code"] for r in _sku]
+        top_sku_rates  = [float(r["rate"]) for r in _sku]
 
-        # ====== Top 5 khu vực lỗi cao (tỷ lệ %) ======
-        cur.execute("""
-            WITH b AS (
+        # ---- Top 5 khu vực lỗi cao (% NG) theo filter ----
+        cur.execute(f"""
+            WITH base AS (
               SELECT area,
-                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng,
-                     SUM(CASE WHEN verdict_overall IS NOT NULL THEN 1 ELSE 0 END) AS total
+                     COUNT(*) AS total,
+                     SUM(CASE WHEN verdict_overall = FALSE THEN 1 ELSE 0 END) AS ng
               FROM measurements
+              WHERE area IS NOT NULL AND area<>'' AND {where_sql}
               GROUP BY area
             )
             SELECT area,
-                   CASE WHEN total > 0 THEN 100.0 * ng / total ELSE 0 END AS rate
-            FROM b
-            WHERE area IS NOT NULL AND total >= 3
-            ORDER BY rate DESC, total DESC
+                   CASE WHEN total>0 THEN ng::float*100/total ELSE 0 END AS rate
+            FROM base
+            WHERE total >= 1
+            ORDER BY rate DESC, ng DESC
             LIMIT 5
-        """)
-        rows = cur.fetchall()
-        top_area_labels = [r["area"] for r in rows]
-        top_area_rates  = [r["rate"] for r in rows]
+        """, tuple(params))
+        _area = cur.fetchall()
+        top_area_labels = [r["area"] for r in _area]
+        top_area_rates  = [float(r["rate"]) for r in _area]
 
     return render_template(
         "dashboard.html",
-        # cũ
-        total=total, avg_val=avg_val, recent=recent,
-        ok_cnt=ok_cnt, ng_cnt=ng_cnt,
-        hours_labels=hours_labels, hours_values=hours_values,
-        days_labels=days_labels, days_values=days_values,
-        # mới - thẻ thống kê
+        # filters
+        start_date=start_date, end_date=end_date, area=area, err=err, areas=areas,
+        # stats
+        total=total,
         worst_area_name=worst_area_name, worst_area_rate=worst_area_rate,
         worst_dim_name=worst_dim_name,   worst_dim_rate=worst_dim_rate,
-        # mới - 3 biểu đồ top
+        # charts (cũ)
+        ok_cnt=ok_cnt, ng_cnt=ng_cnt,
+        hours_labels=hours_labels, hours_values=hours_values,
+        days_labels=days_labels,   days_values=days_values,
+        # charts (mới)
         top_err_labels=top_err_labels, top_err_counts=top_err_counts,
         top_sku_labels=top_sku_labels, top_sku_rates=top_sku_rates,
         top_area_labels=top_area_labels, top_area_rates=top_area_rates,
+        # recent
+        recent=recent,
     )
+
 
 
 

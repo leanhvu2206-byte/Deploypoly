@@ -1,6 +1,52 @@
 {% extends "base.html" %}
 {% block content %}
 <h3 class="mb-4">Dashboard</h3>
+<!-- ====== FILTER BAR ====== -->
+<form method="get" class="card p-3 mb-3" id="filter-form">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label">Từ ngày</label>
+      <input type="date" class="form-control" name="start_date" value="{{ start_date or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Đến ngày</label>
+      <input type="date" class="form-control" name="end_date" value="{{ end_date or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Khu vực (Line)</label>
+      <select class="form-select" name="area">
+        <option value="">Tất cả</option>
+        {% for a in areas %}
+          <option value="{{ a }}" {{ a==area and 'selected' or '' }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Lọc theo lỗi</label>
+      <select class="form-select" name="err">
+        <option value="">Tất cả</option>
+        <option value="id"  {{ err=='id'  and 'selected' or '' }}>Lỗi ID</option>
+        <option value="od1" {{ err=='od1' and 'selected' or '' }}>Lỗi OD1</option>
+        <option value="od2" {{ err=='od2' and 'selected' or '' }}>Lỗi OD2</option>
+        <option value="extras" {{ err=='extras' and 'selected' or '' }}>Lỗi Extras</option>
+      </select>
+    </div>
+  </div>
+  <div class="mt-2 d-flex gap-2">
+    <button class="btn btn-primary" type="submit">Áp dụng</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Xoá lọc</a>
+  </div>
+</form>
+
+<script>
+  // Tự submit khi đổi filter (trừ khi bạn muốn bấm nút)
+  (function(){
+    const form = document.getElementById('filter-form');
+    form.querySelectorAll('input[type="date"], select').forEach(el=>{
+      el.addEventListener('change', ()=> form.submit());
+    });
+  })();
+</script>
 
 <!-- ====== 3 thẻ số liệu ====== -->
 <div class="row g-3">
