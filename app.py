@@ -462,6 +462,8 @@ def dashboard():
         )""")
 
     where_sql = " AND ".join(where)
+    if '%s' not in where_sql:
+     params = []
 
     with get_db() as con, con.cursor() as cur:
         # Danh sách areas cho combobox
