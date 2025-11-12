@@ -1026,15 +1026,43 @@ def delete_extra_check(name):
     if not item_code or not name:
         return "Missing item_code or name", 400
 
-    # --- Hàm chuẩn hoá tên (loại NBSP, gom khoảng trắng, lower) ---
-    def _canon_name(s: str) -> str:
+    # ---- Chuẩn hoá tên (xử lý cả case tên giống số: +010.54) ----
+    import re
+    from decimal import Decimal, InvalidOperation
+
+    def _canon_space(s: str) -> str:
         if not s:
             return ""
-        s = s.replace("\u00A0", " ")           # NBSP -> space
-        s = " ".join(s.split())                # rút gọn khoảng trắng
-        return s.strip().lower()
+        s = s.replace("\u00A0", " ")         # NBSP -> space
+        s = " ".join(s.split())              # gộp khoảng trắng
+        return s.strip()
 
-    canon_target = _canon_name(name)
+    def _canon_lower(s: str) -> str:
+        return _canon_space(s).lower()
+
+    def _canon_numericish(s: str) -> str | None:
+        """Nếu s giống số (có thể có +, 0 ở đầu, dấu phẩy), chuẩn hoá về dạng số 'đẹp'."""
+        if not s:
+            return None
+        t = _canon_space(s)
+        t = t.replace(",", ".")              # cho trường hợp nhập bằng dấu phẩy
+        t = re.sub(r"^\+", "", t)            # bỏ dấu +
+        try:
+            # Decimal để tránh lỗi float 0.3000000004
+            v = Decimal(t)
+        except InvalidOperation:
+            return None
+        # chuẩn dạng: bỏ 0 thừa, bỏ dấu .0 ở cuối
+        q = v.normalize()                    # 10.540 -> 10.54 , 010 -> 10
+        # Trường hợp normalize ra dạng khoa học -> chuyển lại bình thường
+        s = format(q, 'f')
+        # bỏ .0 nếu là số nguyên
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return s
+
+    canon_target_txt = _canon_lower(name)
+    canon_target_num = _canon_numericish(name)   # ví dụ “+010.54” -> “10.54”
 
     with get_db() as con, con.cursor() as cur:
         cur.execute(
@@ -1045,18 +1073,22 @@ def delete_extra_check(name):
         if not latest:
             return "Not found", 404
 
-        # Lấy spec hiện tại (có thể là dict(spec=...), list hoặc None)
         ej = _ec_to_obj(latest["extra_checks"])
         cur_spec = (ej.get("spec") if isinstance(ej, dict) else ej) or []
 
-        # Lọc bỏ hạng mục trùng tên (sau khi chuẩn hoá)
         new_spec = []
         for sp in cur_spec:
-            nm = _canon_name((sp.get("name") or ""))
-            if nm != canon_target:
+            nm_raw = (sp.get("name") or "")
+            nm_txt = _canon_lower(nm_raw)
+            nm_num = _canon_numericish(nm_raw)
+
+            # khớp nếu trùng theo text hoặc (cùng là “số” và cùng giá trị)
+            is_same = (nm_txt == canon_target_txt) or (
+                canon_target_num is not None and nm_num == canon_target_num
+            )
+            if not is_same:
                 new_spec.append(sp)
 
-        # Ghi 1 bản ghi mới làm "version" specs (không có actual/verdict)
         cur.execute("""
             INSERT INTO measurements
             (title, value, created_at, created_by,
@@ -1083,6 +1115,7 @@ def delete_extra_check(name):
 
     flash(f"Đã xóa hạng mục '{name}' khỏi {item_code}.", "success")
     return ("", 204)
+
 
 
 @app.route("/export")
