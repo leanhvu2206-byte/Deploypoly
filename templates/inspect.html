@@ -631,7 +631,36 @@
           }
 
           const form = document.getElementById('auto-form');
+// === Helper: set value + bắn input/change để kích hoạt auto-jump & logic khác ===
+  function setInputValueAndDispatch(el, raw) {
+    if (!el) return;
 
+    // Chuẩn hoá giá trị từ thước (thường có dấu phẩy, khoảng trắng, đơn vị…)
+    let v = (raw ?? '').toString().trim();
+    v = v.replace(',', '.');              // 12,34 -> 12.34
+    v = v.replace(/[^\d\.\-\+eE]/g, '');  // bỏ ký tự lạ (mm, in, unit...)
+
+    // Gán vào input
+    el.value = v;
+
+    // Ép bắn event y như người dùng gõ tay
+    el.dispatchEvent(new Event('input',  { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // === API toàn cục để thước gọi ===
+  // Ví dụ: window.BTFill('actual_id', '10.01')
+  window.BTFill = function(name, value) {
+    const el = document.querySelector(`input[name="${CSS.escape(name)}"]`);
+    setInputValueAndDispatch(el, value);
+  };
+
+  // Dành cho Extras (theo tên hạng mục)
+  // Ví dụ: window.BTFillExtra('OD3', '24.98')
+  window.BTFillExtra = function(dimName, value) {
+    const el = document.querySelector(`#checks-table input.auto-input-ex[data-name="${CSS.escape(dimName)}"]`);
+    setInputValueAndDispatch(el, value);
+  };
           function ensureHidden() {
             let h = document.getElementById('extra_checks_actual');
             if (!h) {
