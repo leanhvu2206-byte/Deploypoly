@@ -175,7 +175,7 @@
 {% else %}
 
   <!-- FORM ĐO + THÔNG TIN (đổi thứ tự các khối theo yêu cầu) -->
-  <form method="post" class="card p-3 mb-4" id="auto-form">
+  <form method="post" class="card p-3 mb-4" id="auto-form" novalidate>
     <input type="hidden" name="item_code" value="{{ item_code }}">
     <input type="hidden" name="extra_checks_actual" id="extra_checks_actual">
 
@@ -257,8 +257,8 @@
       class="form-control auto-input auto-flow"
       name="actual_id"
       value="{{ actual_id is not none and actual_id or '' }}"
-      type="number"
-      step="any"
+      type="text"
+      inputmode="decimal"
       placeholder="VD: 10.01"
     >
     {% set r = verdict.ranges.id %}
@@ -276,8 +276,8 @@
       class="form-control auto-input auto-flow"
       name="actual_od1"
       value="{{ actual_od1 is not none and actual_od1 or '' }}"
-      type="number"
-      step="any"
+      type="text"
+      inputmode="decimal"
       placeholder="VD: 20.00"
     >
     {% set r = verdict.ranges.od1 %}
@@ -295,8 +295,8 @@
       class="form-control auto-input auto-flow"
       name="actual_od2"
       value="{{ actual_od2 is not none and actual_od2 or '' }}"
-      type="number"
-      step="any"
+      type="text"
+      inputmode="decimal"
       placeholder="VD: 30.00"
     >
     {% set r = verdict.ranges.od2 %}
@@ -631,36 +631,48 @@
           }
 
           const form = document.getElementById('auto-form');
-// === Helper: set value + bắn input/change để kích hoạt auto-jump & logic khác ===
-  function setInputValueAndDispatch(el, raw) {
+    function normalizeNumber(raw) {
+    if (raw == null) return '';
+    let s = String(raw).trim();
+
+    // bỏ ký tự không cần thiết, thay , -> .
+    s = s.replace(',', '.');
+
+    // lấy số đầu tiên: +/-?digits(.digits)?
+    const m = s.match(/[-+]?\d+(?:\.\d+)?/);
+    if (!m) return '';                    // không có số hợp lệ
+
+    const num = parseFloat(m[0]);
+    if (!isFinite(num)) return '';
+    return String(num);                   // trả về dạng chuẩn, không dấu +
+  }
+function setInputValueAndDispatch(el, raw) {
     if (!el) return;
-
-    // Chuẩn hoá giá trị từ thước (thường có dấu phẩy, khoảng trắng, đơn vị…)
-    let v = (raw ?? '').toString().trim();
-    v = v.replace(',', '.');              // 12,34 -> 12.34
-    v = v.replace(/[^\d\.\-\+eE]/g, '');  // bỏ ký tự lạ (mm, in, unit...)
-
-    // Gán vào input
-    el.value = v;
-
-    // Ép bắn event y như người dùng gõ tay
+    el.value = normalizeNumber(raw);      // gán giá trị đã chuẩn hoá
     el.dispatchEvent(new Event('input',  { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // === API toàn cục để thước gọi ===
-  // Ví dụ: window.BTFill('actual_id', '10.01')
+  // Cổng gọi cho thước Bluetooth:
+  //   window.BTFill('actual_id', ' +011.96\r\n ');
+  //   window.BTFillExtra('OD3', '24,98');
   window.BTFill = function(name, value) {
     const el = document.querySelector(`input[name="${CSS.escape(name)}"]`);
     setInputValueAndDispatch(el, value);
   };
-
-  // Dành cho Extras (theo tên hạng mục)
-  // Ví dụ: window.BTFillExtra('OD3', '24.98')
   window.BTFillExtra = function(dimName, value) {
     const el = document.querySelector(`#checks-table input.auto-input-ex[data-name="${CSS.escape(dimName)}"]`);
     setInputValueAndDispatch(el, value);
   };
+
+  // Ngoài ra, chuẩn hoá khi người dùng rời ô (trường hợp gõ tay)
+  document.addEventListener('blur', function(e){
+    const t = e.target;
+    if (t && (t.classList.contains('auto-input') || t.classList.contains('auto-input-ex'))) {
+      t.value = normalizeNumber(t.value);
+    }
+  }, true);
+   
           function ensureHidden() {
             let h = document.getElementById('extra_checks_actual');
             if (!h) {
