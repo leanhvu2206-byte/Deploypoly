@@ -590,17 +590,19 @@
               const name = btn.dataset.name;
               if (!confirm(`Xóa hạng mục "${name}"?`)) return;
 
-              try {
-                const arr = JSON
-                  .parse(localStorage.getItem(LS_KEY) || '[]')
-                  .filter(x => (x.name || '').trim().toLowerCase() !== name.toLowerCase());
-                localStorage.setItem(LS_KEY, JSON.stringify(arr));
-              } catch(e) {}
 
-              fetch(`/measurements/delete_extra/${encodeURIComponent(name)}?item_code={{ item_code }}`, { method: 'POST' })
-                .then(() => location.reload());
-            });
-          }
+              try {
+      const arr = JSON.parse(localStorage.getItem(LS_KEY) || '[]')
+        .filter(x => (" "+(x.name||"").replace(/\u00A0/g,' ').trim().toLowerCase()+" ")
+          .trim() !== name.replace(/\u00A0/g,' ').trim().toLowerCase());
+      localStorage.setItem(LS_KEY, JSON.stringify(arr));
+    } catch(e) {}
+
+    // 2) Gọi server xoá, xong reload
+    fetch(`/measurements/delete_extra/${encodeURIComponent(name)}?item_code={{ item_code }}`, { method: 'POST' })
+      .then(() => location.reload());
+  });
+}
 
           if (tbody) (specObj.spec || []).forEach(sp => tbody.insertAdjacentHTML('beforeend', rowTpl(sp)));
 
