@@ -1026,16 +1026,37 @@ def delete_extra_check(name):
     if not item_code or not name:
         return "Missing item_code or name", 400
 
+    # --- Hàm chuẩn hoá tên (loại NBSP, gom khoảng trắng, lower) ---
+    def _canon_name(s: str) -> str:
+        if not s:
+            return ""
+        s = s.replace("\u00A0", " ")           # NBSP -> space
+        s = " ".join(s.split())                # rút gọn khoảng trắng
+        return s.strip().lower()
+
+    canon_target = _canon_name(name)
+
     with get_db() as con, con.cursor() as cur:
-        cur.execute("SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC", (item_code,))
+        cur.execute(
+            "SELECT * FROM measurements WHERE item_code = %s ORDER BY created_at DESC",
+            (item_code,)
+        )
         latest = cur.fetchone()
         if not latest:
             return "Not found", 404
 
+        # Lấy spec hiện tại (có thể là dict(spec=...), list hoặc None)
         ej = _ec_to_obj(latest["extra_checks"])
         cur_spec = (ej.get("spec") if isinstance(ej, dict) else ej) or []
-        new_spec = [sp for sp in cur_spec if (sp.get("name") or "").strip().lower() != name.lower()]
 
+        # Lọc bỏ hạng mục trùng tên (sau khi chuẩn hoá)
+        new_spec = []
+        for sp in cur_spec:
+            nm = _canon_name((sp.get("name") or ""))
+            if nm != canon_target:
+                new_spec.append(sp)
+
+        # Ghi 1 bản ghi mới làm "version" specs (không có actual/verdict)
         cur.execute("""
             INSERT INTO measurements
             (title, value, created_at, created_by,
@@ -1059,6 +1080,7 @@ def delete_extra_check(name):
             None, None, None,
             None, None, None, None
         ))
+
     flash(f"Đã xóa hạng mục '{name}' khỏi {item_code}.", "success")
     return ("", 204)
 

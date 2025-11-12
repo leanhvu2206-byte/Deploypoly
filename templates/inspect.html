@@ -31,13 +31,13 @@
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Kích thước ID</label>
-            <input class="form-control mb-3" name="id_size" type="text" inputmode="decimal" placeholder="VD: 10.00">
+            <input class="form-control mb-3" name="id_size" type="number" step="any" placeholder="VD: 10.00">
 
             <label class="form-label">Kích thước OD1</label>
-            <input class="form-control mb-3" name="od1_size" type="text" inputmode="decimal" placeholder="VD: 20.00">
+            <input class="form-control mb-3" name="od1_size" type="number" step="any" placeholder="VD: 20.00">
 
             <label class="form-label">Kích thước OD2</label>
-            <input class="form-control mb-2" name="od2_size" type="text" inputmode="decimal" placeholder="VD: 30.00">
+            <input class="form-control mb-2" name="od2_size" type="number" step="any" placeholder="VD: 30.00">
 
             <div id="init-dim-sizes"></div>
           </div>
@@ -568,12 +568,12 @@
                 <td>${d.tol_plus ?? ''}</td>
                 <td>${d.tol_minus ?? ''}</td>
                 <td>
-                  <input
-                    class="form-control form-control-sm auto-input-ex auto-flow"
-                    type="number" step="any"
-                    data-name="${nm}"
-                    value="${(val ?? '')}"
-                  >
+                  + <input
++   class="form-control form-control-sm auto-input-ex auto-flow"
++   type="text" inputmode="decimal" pattern="[0-9.+-]*"
++   data-name="${nm}"
++   value="${(val ?? '')}"
++ >
                 </td>
                 <td>
                   <button type="button" class="btn btn-sm btn-outline-danger del-extra" data-name="${nm}">X</button>
