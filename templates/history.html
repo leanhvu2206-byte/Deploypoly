@@ -86,12 +86,17 @@
     <tbody>
       {% for r in rows %}
         <tr
-          data-actual-id="{{ r.actual_id or '' }}"
-          data-actual-od1="{{ r.actual_od1 or '' }}"
-          data-actual-od2="{{ r.actual_od2 or '' }}"
+          data-size-id="{{ r.id_size or '' }}"
+          data-size-od1="{{ r.od1_size or '' }}"
+          data-size-od2="{{ r.od2_size or '' }}"
+
           data-tol-id="{{ r.id_tol or '' }}"
           data-tol-od1="{{ r.od1_tol or '' }}"
           data-tol-od2="{{ r.od2_tol or '' }}"
+
+          data-actual-id="{{ r.actual_id or '' }}"
+          data-actual-od1="{{ r.actual_od1 or '' }}"
+          data-actual-od2="{{ r.actual_od2 or '' }}"
         >
           <td>{{ r.id }}</td>
           <td>{{ r.item_code or '' }}</td>
@@ -145,7 +150,7 @@
     </tbody>
   </table>
 
-  {# ====== JS: Xuất CSV từ bảng hiện tại (tách Actual + Tolerance thành cột riêng) ====== #}
+  {# ====== JS: Xuất CSV từ bảng hiện tại (tách Size + Tol + Actual thành cột riêng) ====== #}
   <script>
     (function() {
       function escapeCSV(value) {
@@ -162,16 +167,23 @@
         const rows = [];
         const tbody = table.querySelector('tbody');
 
-        // Header CSV: đã thêm các cột tolerance
+        // Header CSV: Size + Tol + Actual cho từng kích thước
         const header = [
           'ID',
           'Mã hàng',
-          'Actual ID',
+
+          'Size ID',
           'Tol ID',
-          'Actual OD1',
+          'Actual ID',
+
+          'Size OD1',
           'Tol OD1',
-          'Actual OD2',
+          'Actual OD1',
+
+          'Size OD2',
           'Tol OD2',
+          'Actual OD2',
+
           'Extras',
           'Người đo / Khu vực / Ghi chú',
           'Verdict',
@@ -196,25 +208,37 @@
             const verdict   = tds[5]?.textContent || '';
             const createdAt = tds[6]?.textContent || '';
 
-            // Lấy Actual từ data-* trên <tr>
+            // Size từ data-*
+            const sizeId  = tr.dataset.sizeId  || '';
+            const sizeOd1 = tr.dataset.sizeOd1 || '';
+            const sizeOd2 = tr.dataset.sizeOd2 || '';
+
+            // Tolerance từ data-*
+            const tolId  = tr.dataset.tolId  || '';
+            const tolOd1 = tr.dataset.tolOd1 || '';
+            const tolOd2 = tr.dataset.tolOd2 || '';
+
+            // Actual từ data-*
             const actualId  = tr.dataset.actualId  || '';
             const actualOd1 = tr.dataset.actualOd1 || '';
             const actualOd2 = tr.dataset.actualOd2 || '';
 
-            // Lấy Tolerance từ data-* trên <tr>
-            const tolId     = tr.dataset.tolId     || '';
-            const tolOd1    = tr.dataset.tolOd1    || '';
-            const tolOd2    = tr.dataset.tolOd2    || '';
-
             const row = [
               id,
               itemCode,
-              actualId,
+
+              sizeId,
               tolId,
-              actualOd1,
+              actualId,
+
+              sizeOd1,
               tolOd1,
-              actualOd2,
+              actualOd1,
+
+              sizeOd2,
               tolOd2,
+              actualOd2,
+
               extras,
               who,
               verdict,
