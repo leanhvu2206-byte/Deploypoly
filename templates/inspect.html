@@ -192,14 +192,17 @@
       </div>
 
       <div class="col-md-4">
-        <label class="form-label">Khu vực đo</label>
-        <input
-          class="form-control"
-          name="measure_area"
-          placeholder="VD: Line 1 / Khu A"
-          value="{{ request.values.get('measure_area','') }}"
-        >
-      </div>
+  <label class="form-label">Khu vực đo</label>
+  <select class="form-control" name="measure_area">
+    {% for i in range(1, 14) %}
+      <option value="Line {{ i }}"
+        {% if request.values.get('measure_area') == ('Line ' ~ i) %}selected{% endif %}
+      >
+        Line {{ i }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
 
       <div class="col-md-4">
         <label class="form-label">Ghi chú</label>
