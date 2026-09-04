@@ -879,40 +879,62 @@
           <td>
 
 
-            <form
-              method="post"
-              action="{{ url_for('delete_measurement', mid=r.id) }}"
-              class="d-inline"
-              data-id="{{ r.id }}"
-              onsubmit="return askPwdAndConfirm(this);"
-            >
+<td class="text-center">
 
+  <form
+    method="post"
+    action="{{ url_for('delete_measurement', mid=r.id) }}"
+    class="d-inline"
+    data-id="{{ r.id }}"
+    onsubmit="return askPwdAndConfirm(this);"
+  >
+    <input type="hidden" name="password" value="">
 
-              <input
-                type="hidden"
-                name="password"
-                value=""
-              >
+    <button
+      type="submit"
+      class="btn btn-outline-danger btn-sm"
+    >
+      Xoá
+    </button>
+  </form>
 
+  <div class="mt-2">
+    <input
+      type="checkbox"
+      class="form-check-input bulk-delete-check"
+      value="{{ r.id }}"
+      aria-label="Chọn bài đo {{ r.id }}"
+    >
+  </div>
 
-              <button
-                type="submit"
-                class="btn btn-outline-danger btn-sm"
-              >
+</td>
+          <div class="d-flex justify-content-end align-items-center gap-3 mb-3">
 
-                Xoá
+  <div class="form-check">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      id="check-all-delete"
+    >
 
-              </button>
+    <label
+      class="form-check-label"
+      for="check-all-delete"
+    >
+      Chọn tất cả
+    </label>
+  </div>
 
+  <button
+    type="button"
+    class="btn btn-danger"
+    id="btn-delete-selected"
+    disabled
+  >
+    Xóa đã chọn (0)
+  </button>
 
-            </form>
-
-
-          </td>
-
-
-        </tr>
-
+</div>
 
 
 
@@ -1433,6 +1455,118 @@
 
 
 </script>
+const checkAll = document.getElementById('check-all-delete');
+const deleteSelectedBtn = document.getElementById('btn-delete-selected');
 
+function getDeleteChecks() {
+  return Array.from(
+    document.querySelectorAll('.bulk-delete-check')
+  );
+}
+
+function updateBulkDeleteUI() {
+  const checks = getDeleteChecks();
+
+  const selected = checks.filter(cb => cb.checked);
+
+  if (deleteSelectedBtn) {
+    deleteSelectedBtn.disabled = selected.length === 0;
+    deleteSelectedBtn.textContent =
+      `Xóa đã chọn (${selected.length})`;
+  }
+
+  if (checkAll) {
+    checkAll.checked =
+      checks.length > 0 &&
+      selected.length === checks.length;
+
+    checkAll.indeterminate =
+      selected.length > 0 &&
+      selected.length < checks.length;
+  }
+}
+
+
+checkAll?.addEventListener('change', function () {
+
+  getDeleteChecks().forEach(cb => {
+    cb.checked = this.checked;
+  });
+
+  updateBulkDeleteUI();
+
+});
+
+
+document.addEventListener('change', function(e) {
+
+  if (
+    e.target.classList.contains('bulk-delete-check')
+  ) {
+    updateBulkDeleteUI();
+  }
+
+});
+
+
+deleteSelectedBtn?.addEventListener('click', async function () {
+
+  const ids = getDeleteChecks()
+    .filter(cb => cb.checked)
+    .map(cb => cb.value);
+
+  if (!ids.length) return;
+
+
+  const pwd = prompt(
+    `Nhập mật khẩu để xoá ${ids.length} bài đo:`
+  );
+
+  if (!pwd) return;
+
+
+  const ok = confirm(
+    `Bạn chắc chắn muốn xoá ${ids.length} bài đo đã chọn?`
+  );
+
+  if (!ok) return;
+
+
+  const form = document.createElement('form');
+
+  form.method = 'POST';
+  form.action = '/measurements/delete_selected';
+
+
+  ids.forEach(id => {
+
+    const input = document.createElement('input');
+
+    input.type = 'hidden';
+    input.name = 'selected_ids';
+    input.value = id;
+
+    form.appendChild(input);
+
+  });
+
+
+  const pwdInput = document.createElement('input');
+
+  pwdInput.type = 'hidden';
+  pwdInput.name = 'password';
+  pwdInput.value = pwd;
+
+  form.appendChild(pwdInput);
+
+
+  document.body.appendChild(form);
+
+  form.submit();
+
+});
+
+
+updateBulkDeleteUI();
 
 {% endblock %}
