@@ -80,10 +80,30 @@
     }
   </style>
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h3>Tất cả bài đo</h3>
-    <a class="btn btn-success" href="{{ url_for('new_measurement') }}">+ Tạo mới</a>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>Tất cả bài đo</h3>
+
+  <div class="d-flex gap-2">
+
+    {% if detail_view %}
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for(request.endpoint, view='summary', q=q) }}">
+        ← Thu gọn
+      </a>
+    {% else %}
+      <a class="btn btn-outline-primary"
+         href="{{ url_for(request.endpoint, view='detail', q=q) }}">
+        👁 Xem chi tiết
+      </a>
+    {% endif %}
+
+    <a class="btn btn-success"
+       href="{{ url_for('new_measurement') }}">
+      + Tạo mới
+    </a>
+
   </div>
+</div>
 
   <form class="row g-2 mb-3" method="get">
     <div class="col-auto">
