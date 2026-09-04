@@ -191,17 +191,26 @@
         >
       </div>
 
-      <div class="col-md-4">
-  <label class="form-label">Khu vực đo</label>
+<div class="col-md-4"> 
+  <label class="form-label">Khu vực đo</label> 
+
   <select class="form-control" name="measure_area">
-    {% for i in range(1, 14) %}
-      <option value="Line {{ i }}"
-        {% if request.values.get('measure_area') == ('Line ' ~ i) %}selected{% endif %}
-      >
-        Line {{ i }}
-      </option>
-    {% endfor %}
-  </select>
+
+    <option value="Part off"
+      {% if request.values.get('measure_area') == 'Part off' %}selected{% endif %}
+    >
+      Part off
+    </option>
+
+    {% for i in range(1, 14) %} 
+      <option value="Line {{ i }}" 
+        {% if request.values.get('measure_area') == ('Line ' ~ i) %}selected{% endif %} 
+      > 
+        Line {{ i }} 
+      </option> 
+    {% endfor %} 
+
+  </select> 
 </div>
 
       <div class="col-md-4">
