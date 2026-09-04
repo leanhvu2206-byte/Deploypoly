@@ -4,10 +4,6 @@
 {% set detail_view = request.args.get('view') == 'detail' %}
 
 <style>
-
-  /* =========================================================
-     BẢNG TỔNG THỂ
-     ========================================================= */
   table.table {
     width: 100%;
     border-collapse: separate;
@@ -16,8 +12,7 @@
     table-layout: auto;
   }
 
-  th,
-  td {
+  th, td {
     padding: .55rem .75rem;
     font-size: .95rem;
     vertical-align: top;
@@ -26,22 +21,11 @@
     line-height: 1.3;
   }
 
-  th {
-    text-align: center;
-  }
+  th { text-align: center; }
+  .text-end { text-align: right; }
+  .text-muted { color: #6b7280; }
 
-  .text-end {
-    text-align: right;
-  }
-
-  .text-muted {
-    color: #6b7280;
-  }
-
-
-  /* =========================================================
-     SUMMARY TABLE
-     ========================================================= */
+  /* ===== SUMMARY ===== */
   .summary-table {
     max-width: 900px;
   }
@@ -53,18 +37,14 @@
 
   .summary-item-code {
     font-weight: 700;
-    font-size: .95rem;
   }
 
   .summary-verdict {
-    text-align: center;
     width: 180px;
+    text-align: center;
   }
 
-
-  /* =========================================================
-     CHIPS KÍCH THƯỚC
-     ========================================================= */
+  /* ===== CHIPS ===== */
   .chips-col {
     display: flex;
     flex-direction: column;
@@ -91,9 +71,7 @@
     white-space: nowrap;
   }
 
-  .chip__name {
-    font-weight: 600;
-  }
+  .chip__name { font-weight: 600; }
 
   .chip__tol {
     color: #6b7280;
@@ -118,10 +96,7 @@
     background: #fef2f2;
   }
 
-
-  /* =========================================================
-     VERDICT PASS / FAIL
-     ========================================================= */
+  /* ===== VERDICT ===== */
   .pill {
     display: inline-block;
     padding: .4rem .8rem;
@@ -132,7 +107,7 @@
     color: #fff;
     text-align: center;
     min-width: 70px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, .15);
+    box-shadow: 0 1px 2px rgba(0,0,0,.15);
   }
 
   .pill--pass {
@@ -143,10 +118,7 @@
     background: linear-gradient(135deg, #dc2626, #ef4444);
   }
 
-
-  /* =========================================================
-     ACTION / CORRECTIVE ACTION
-     ========================================================= */
+  /* ===== ACTION ===== */
   .ca-row {
     display: none;
   }
@@ -166,20 +138,14 @@
     background: #fff;
     border: 1px solid #e5e7eb;
     border-radius: .75rem;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
     padding: .75rem;
   }
 
   .ca-grid {
     display: grid;
     gap: .5rem;
-    grid-template-columns:
-      70px
-      1fr
-      180px
-      160px
-      150px
-      auto;
+    grid-template-columns: 70px 1fr 180px 160px 150px auto;
   }
 
   .ca-grid .form-control,
@@ -199,10 +165,6 @@
     color: #6b7280;
   }
 
-
-  /* =========================================================
-     ACTION STATUS
-     ========================================================= */
   .badge-status {
     display: inline-block;
     padding: .15rem .5rem;
@@ -212,38 +174,31 @@
     background: #e5e7eb;
   }
 
-  .badge-status[data-s="open"] {
-    background: #dbeafe;
+  .badge-status[data-s="open"] { background: #dbeafe; }
+  .badge-status[data-s="in_progress"] { background: #fde68a; }
+  .badge-status[data-s="done"] { background: #bbf7d0; }
+
+  /* ===== BULK DELETE ===== */
+  .bulk-delete-bar {
+    background: #f8f9fa;
+    border: 1px solid #e5e7eb;
+    border-radius: .6rem;
+    padding: .55rem .8rem;
   }
 
-  .badge-status[data-s="in_progress"] {
-    background: #fde68a;
+  .bulk-delete-check {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
   }
 
-  .badge-status[data-s="done"] {
-    background: #bbf7d0;
-  }
-
-
-  /* =========================================================
-     RESPONSIVE
-     ========================================================= */
   @media (max-width: 1200px) {
-
     .ca-grid {
-      grid-template-columns:
-        60px
-        1fr
-        140px
-        140px
-        140px
-        auto;
+      grid-template-columns: 60px 1fr 140px 140px 140px auto;
     }
-
   }
 
   @media (max-width: 768px) {
-
     .ca-grid {
       grid-template-columns: 1fr;
     }
@@ -251,298 +206,156 @@
     .summary-verdict {
       width: 120px;
     }
-
   }
-
 </style>
 
 
-<!-- =========================================================
-     HEADER
-     ========================================================= -->
-
+<!-- ===== HEADER ===== -->
 <div class="d-flex justify-content-between align-items-center mb-3">
-
-  <h3 class="mb-0">
-    Tất cả bài đo
-  </h3>
-
+  <h3 class="mb-0">Tất cả bài đo</h3>
 
   <div class="d-flex gap-2">
-
     {% if detail_view %}
-
-      <!-- ĐANG Ở CHẾ ĐỘ CHI TIẾT -->
-      <a
-        class="btn btn-outline-secondary"
-        href="{{ url_for(request.endpoint, q=q) }}"
-      >
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for(request.endpoint, q=q) }}">
         ← Thu gọn
       </a>
-
     {% else %}
-
-      <!-- CHẾ ĐỘ SUMMARY -->
-      <a
-        class="btn btn-outline-primary"
-        href="{{ url_for(request.endpoint, view='detail', q=q) }}"
-      >
+      <a class="btn btn-outline-primary"
+         href="{{ url_for(request.endpoint, view='detail', q=q) }}">
         👁 Xem chi tiết
       </a>
-
     {% endif %}
 
-
-    <a
-      class="btn btn-success"
-      href="{{ url_for('new_measurement') }}"
-    >
+    <a class="btn btn-success"
+       href="{{ url_for('new_measurement') }}">
       + Tạo mới
     </a>
-
   </div>
-
 </div>
 
 
+<!-- ===== TÌM KIẾM ===== -->
+<form class="row g-2 mb-3" method="get">
 
-<!-- =========================================================
-     TÌM KIẾM
-     ========================================================= -->
-
-<form
-  class="row g-2 mb-3"
-  method="get"
->
-
-  <!-- Nếu đang Detail thì khi tìm kiếm vẫn giữ Detail -->
   {% if detail_view %}
-    <input
-      type="hidden"
-      name="view"
-      value="detail"
-    >
+    <input type="hidden" name="view" value="detail">
   {% endif %}
 
-
   <div class="col-auto">
-
-    <input
-      class="form-control"
-      name="q"
-      placeholder="Tìm theo tiêu đề hoặc mã hàng..."
-      value="{{ q or '' }}"
-    >
-
+    <input class="form-control"
+           name="q"
+           placeholder="Tìm theo tiêu đề hoặc mã hàng..."
+           value="{{ q or '' }}">
   </div>
 
-
   <div class="col-auto">
-
-    <button
-      class="btn btn-outline-primary"
-      type="submit"
-    >
+    <button class="btn btn-outline-primary" type="submit">
       Tìm
     </button>
-
   </div>
 
 </form>
 
 
-
-<!-- =========================================================
-     MACRO HIỂN THỊ KÍCH THƯỚC
-     CHỈ DÙNG KHI XEM CHI TIẾT
-     ========================================================= -->
-
+<!-- ===== MACRO DIMENSION ===== -->
 {% macro dim_chip(name, size, tol, actual, verdict) -%}
-
   {%- set status = verdict -%}
 
-  <span
-    class="
-      chip
-      {{ status == 1 and 'chip--pass'
-         or (status == 0 and 'chip--fail' or '') }}
-    "
-  >
+  <span class="chip {{ status == 1 and 'chip--pass' or (status == 0 and 'chip--fail' or '') }}">
 
     <span class="chip__name">
       {{ name }}
     </span>
 
-
     <span class="chip__dim">
-
-      {{ size is not none and size or '—' }}
+      {{ size if size is not none else '—' }}
 
       {% if tol %}
         <span class="chip__tol">
           ({{ tol }})
         </span>
       {% endif %}
-
     </span>
-
 
     <span class="chip__actual">
-      Actual:
-      {{ actual is not none and actual or '—' }}
+      Actual: {{ actual if actual is not none else '—' }}
     </span>
 
-
     {% if status is not none %}
-
       <span class="chip__badge">
-
         {{ status == 1 and 'PASS' or 'FAIL' }}
-
       </span>
-
     {% endif %}
 
   </span>
-
 {%- endmacro %}
 
 
-
-
-
-<!-- =========================================================
-     CHẾ ĐỘ 1
+<!-- =====================================================
      SUMMARY
-     MẶC ĐỊNH CHỈ HIỂN THỊ:
-     MÃ HÀNG + VERDICT
-     ========================================================= -->
-
+     ===================================================== -->
 {% if not detail_view %}
-
 
 <div class="table-responsive">
 
   <table class="table table-striped table-sm align-middle summary-table">
 
     <thead>
-
       <tr>
-
-        <th style="text-align:left;">
-          Mã hàng
-        </th>
-
-        <th class="summary-verdict">
-          Verdict
-        </th>
-
+        <th style="text-align:left;">Mã hàng</th>
+        <th class="summary-verdict">Verdict</th>
       </tr>
-
     </thead>
-
 
     <tbody>
 
-
-      {#
-        Mỗi mã hàng chỉ hiển thị 1 lần.
-
-        LƯU Ý:
-        Logic này lấy record xuất hiện đầu tiên trong rows.
-
-        Nếu backend của bạn đang ORDER BY ID DESC
-        hoặc created_at DESC
-        thì đây chính là record mới nhất của mã hàng.
-      #}
-
       {% set ns = namespace(seen=[]) %}
-
 
       {% for r in rows %}
 
-
         {% set code = r.item_code or '' %}
 
-
         {% if code and code not in ns.seen %}
-
-
           {% set ns.seen = ns.seen + [code] %}
-
 
           <tr>
 
-
-            <!-- MÃ HÀNG -->
             <td>
-
               <span class="summary-item-code">
-
                 {{ code }}
-
               </span>
-
             </td>
 
-
-
-            <!-- VERDICT -->
             <td class="summary-verdict">
 
               {% if r.verdict_overall is not none %}
 
-                <span
-                  class="
-                    pill
-                    {{ r.verdict_overall
-                       and 'pill--pass'
-                       or 'pill--fail' }}
-                  "
-                >
-
-                  {{ r.verdict_overall
-                     and 'PASS'
-                     or 'FAIL' }}
-
+                <span class="pill {{ r.verdict_overall and 'pill--pass' or 'pill--fail' }}">
+                  {{ r.verdict_overall and 'PASS' or 'FAIL' }}
                 </span>
 
               {% else %}
 
-                <span class="text-muted">
-                  —
-                </span>
+                <span class="text-muted">—</span>
 
               {% endif %}
 
             </td>
 
-
           </tr>
-
 
         {% endif %}
 
-
       {% else %}
 
-
         <tr>
-
-          <td
-            colspan="2"
-            class="text-center text-muted"
-          >
-
+          <td colspan="2" class="text-center text-muted">
             Chưa có dữ liệu
-
           </td>
-
         </tr>
 
-
       {% endfor %}
-
 
     </tbody>
 
@@ -551,1022 +364,501 @@
 </div>
 
 
-
-
-<!-- =========================================================
-     CHẾ ĐỘ 2
+<!-- =====================================================
      DETAIL
-     CHỈ LOAD / RENDER GIAO DIỆN KHI
-     NGƯỜI DÙNG BẤM "XEM CHI TIẾT"
-     ========================================================= -->
-
+     ===================================================== -->
 {% else %}
 
 
-
-<div class="table-responsive">
-
-
-  <table class="table table-striped table-sm align-middle">
-
-
-    <thead>
-
-      <tr>
-
-        <th class="text-end">
-          ID
-        </th>
-
-
-        <th>
-          Mã hàng
-        </th>
-
-
-        <th class="text-center">
-          ID<br>
-          (size/tol)
-        </th>
-
-
-        <th class="text-center">
-          OD1<br>
-          (size/tol)
-        </th>
-
-
-        <th class="text-center">
-          OD2<br>
-          (size/tol)
-        </th>
-
-
-        <th class="text-center">
-          Actuals
-          (ID/OD1/OD2)
-        </th>
-
-
-        <th>
-          Extras
-        </th>
-
-
-        <th>
-          Người đo /
-          Khu vực /
-          Ghi chú
-        </th>
-
-
-        <th>
-          Verdict
-        </th>
-
-
-        <th>
-          Hành động
-        </th>
-
-
-        <th>
-          Thời gian
-        </th>
-
-
-        <th></th>
-
-      </tr>
-
-    </thead>
-
-
-
-    <tbody>
-
-
-      {% for r in rows %}
-
-
-        <!-- =====================================================
-             DÒNG CHÍNH
-             ===================================================== -->
-
-        <tr id="m-{{ r.id }}">
-
-
-          <!-- ID RECORD -->
-          <td class="text-center">
-
-            {{ r.id }}
-
-          </td>
-
-
-
-          <!-- MÃ HÀNG -->
-          <td>
-
-            {{ r.item_code or '' }}
-
-          </td>
-
-
-
-          <!-- ID SPEC -->
-          <td class="text-center">
-
-            {{ r.id_size or '—' }}
-
-            {% if r.id_tol %}
-
-              ({{ r.id_tol }})
-
-            {% endif %}
-
-          </td>
-
-
-
-          <!-- OD1 SPEC -->
-          <td class="text-center">
-
-            {{ r.od1_size or '—' }}
-
-            {% if r.od1_tol %}
-
-              ({{ r.od1_tol }})
-
-            {% endif %}
-
-          </td>
-
-
-
-          <!-- OD2 SPEC -->
-          <td class="text-center">
-
-            {{ r.od2_size or '—' }}
-
-            {% if r.od2_tol %}
-
-              ({{ r.od2_tol }})
-
-            {% endif %}
-
-          </td>
-
-
-
-          <!-- ACTUAL ID / OD1 / OD2 -->
-          <td class="text-center">
-
-
-            <div class="chips-col">
-
-
-              {{ dim_chip(
-                'ID',
-                r.id_size,
-                r.id_tol,
-                r.actual_id,
-                r.verdict_id
-              ) }}
-
-
-              {{ dim_chip(
-                'OD1',
-                r.od1_size,
-                r.od1_tol,
-                r.actual_od1,
-                r.verdict_od1
-              ) }}
-
-
-              {{ dim_chip(
-                'OD2',
-                r.od2_size,
-                r.od2_tol,
-                r.actual_od2,
-                r.verdict_od2
-              ) }}
-
-
-            </div>
-
-          </td>
-
-
-
-          <!-- EXTRA DIMENSIONS -->
-          <td>
-
-            {{ r.extra_checks | render_extras | safe }}
-
-          </td>
-
-
-
-          <!-- NGƯỜI ĐO / KHU VỰC / NOTE -->
-          <td>
-
-
-            {{ r.measured_by or '—' }}
-
-
-            {% if r.area %}
-
-              <span class="text-muted">
-
-                • {{ r.area }}
-
-              </span>
-
-            {% endif %}
-
-
-            {% if r.note %}
-
-              <br>
-
-              <small class="text-muted">
-
-                {{ r.note }}
-
-              </small>
-
-            {% endif %}
-
-
-          </td>
-
-
-
-          <!-- VERDICT -->
-          <td>
-
-
-            {% if r.verdict_overall is not none %}
-
-
-              <span
-                class="
-                  pill
-                  {{ r.verdict_overall
-                     and 'pill--pass'
-                     or 'pill--fail' }}
-                "
-              >
-
-                {{ r.verdict_overall
-                   and 'PASS'
-                   or 'FAIL' }}
-
-              </span>
-
-
-            {% else %}
-
-
-              <span class="text-muted">
-
-                —
-
-              </span>
-
-
-            {% endif %}
-
-
-          </td>
-
-
-
-          <!-- ACTION -->
-          <td>
-
-
-            <button
-              type="button"
-              class="btn btn-outline-primary btn-sm ca-toggle"
-              data-mid="{{ r.id }}"
-              data-has-action="{{ '1' if r.action else '0' }}"
-              aria-expanded="false"
-            >
-
-              {{ 'Xem chi tiết'
-                 if r.action
-                 else 'Cập nhật' }}
-
-            </button>
-
-
-          </td>
-
-
-
-          <!-- THỜI GIAN -->
-          <td class="text-muted">
-
-            {{ r.created_at | fmt_dt }}
-
-          </td>
-
-
-
-          <!-- DELETE -->
-          <td>
-
-
-<td class="text-center">
-
-  <form
-    method="post"
-    action="{{ url_for('delete_measurement', mid=r.id) }}"
-    class="d-inline"
-    data-id="{{ r.id }}"
-    onsubmit="return askPwdAndConfirm(this);"
-  >
-    <input type="hidden" name="password" value="">
-
-    <button
-      type="submit"
-      class="btn btn-outline-danger btn-sm"
-    >
-      Xoá
-    </button>
-  </form>
-
-  <div class="mt-2">
-    <input
-      type="checkbox"
-      class="form-check-input bulk-delete-check"
-      value="{{ r.id }}"
-      aria-label="Chọn bài đo {{ r.id }}"
-    >
-  </div>
-
-</td>
-          <div class="d-flex justify-content-end align-items-center gap-3 mb-3">
-
-  <div class="form-check">
-    <input
-      class="form-check-input"
-      type="checkbox"
-      id="check-all-delete"
-    >
-
-    <label
-      class="form-check-label"
-      for="check-all-delete"
-    >
+<!-- ===== XÓA NHIỀU ===== -->
+<div class="bulk-delete-bar d-flex justify-content-end align-items-center gap-3 mb-3">
+
+  <div class="form-check mb-0">
+    <input class="form-check-input"
+           type="checkbox"
+           id="check-all-delete">
+
+    <label class="form-check-label"
+           for="check-all-delete">
       Chọn tất cả
     </label>
   </div>
 
-  <button
-    type="button"
-    class="btn btn-danger"
-    id="btn-delete-selected"
-    disabled
-  >
+  <button type="button"
+          class="btn btn-danger btn-sm"
+          id="btn-delete-selected"
+          disabled>
     Xóa đã chọn (0)
   </button>
 
 </div>
 
 
+<div class="table-responsive">
+
+  <table class="table table-striped table-sm align-middle">
+
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Mã hàng</th>
+        <th>ID<br>(size/tol)</th>
+        <th>OD1<br>(size/tol)</th>
+        <th>OD2<br>(size/tol)</th>
+        <th>Actuals<br>(ID/OD1/OD2)</th>
+        <th>Extras</th>
+        <th>Người đo / Khu vực / Ghi chú</th>
+        <th>Verdict</th>
+        <th>Hành động</th>
+        <th>Thời gian</th>
+        <th>Xóa</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+      {% for r in rows %}
+
+      <!-- ===== DÒNG BÀI ĐO ===== -->
+      <tr id="m-{{ r.id }}">
+
+        <td class="text-center">
+          {{ r.id }}
+        </td>
+
+        <td>
+          {{ r.item_code or '' }}
+        </td>
+
+        <td class="text-center">
+          {{ r.id_size if r.id_size is not none else '—' }}
+          {% if r.id_tol %}({{ r.id_tol }}){% endif %}
+        </td>
+
+        <td class="text-center">
+          {{ r.od1_size if r.od1_size is not none else '—' }}
+          {% if r.od1_tol %}({{ r.od1_tol }}){% endif %}
+        </td>
+
+        <td class="text-center">
+          {{ r.od2_size if r.od2_size is not none else '—' }}
+          {% if r.od2_tol %}({{ r.od2_tol }}){% endif %}
+        </td>
+
+        <td class="text-center">
+          <div class="chips-col">
+            {{ dim_chip('ID', r.id_size, r.id_tol, r.actual_id, r.verdict_id) }}
+            {{ dim_chip('OD1', r.od1_size, r.od1_tol, r.actual_od1, r.verdict_od1) }}
+            {{ dim_chip('OD2', r.od2_size, r.od2_tol, r.actual_od2, r.verdict_od2) }}
+          </div>
+        </td>
+
+        <td>
+          {{ r.extra_checks | render_extras | safe }}
+        </td>
+
+        <td>
+          {{ r.measured_by or '—' }}
+
+          {% if r.area %}
+            <span class="text-muted">
+              • {{ r.area }}
+            </span>
+          {% endif %}
+
+          {% if r.note %}
+            <br>
+            <small class="text-muted">
+              {{ r.note }}
+            </small>
+          {% endif %}
+        </td>
+
+        <td class="text-center">
+
+          {% if r.verdict_overall is not none %}
+
+            <span class="pill {{ r.verdict_overall and 'pill--pass' or 'pill--fail' }}">
+              {{ r.verdict_overall and 'PASS' or 'FAIL' }}
+            </span>
+
+          {% else %}
+
+            <span class="text-muted">—</span>
+
+          {% endif %}
+
+        </td>
 
 
-        <!-- =====================================================
-             DÒNG ACTION MỞ RỘNG
-             ===================================================== -->
+        <!-- ACTION -->
+        <td class="text-center">
 
-        <tr
-          id="carow-{{ r.id }}"
-          class="ca-row"
-        >
+          <button type="button"
+                  class="btn btn-outline-primary btn-sm ca-toggle"
+                  data-mid="{{ r.id }}"
+                  data-has-action="{{ '1' if r.action else '0' }}"
+                  aria-expanded="false">
 
+            {{ 'Xem chi tiết' if r.action else 'Cập nhật' }}
 
-          <td colspan="12">
+          </button>
 
-
-            <div class="ca-card">
-
-
-
-              <!-- ACTION ĐÃ CÓ -->
-              {% if r.action %}
+        </td>
 
 
-                <div
-                  class="mb-3"
-                  style="font-size:.9rem"
-                >
+        <!-- TIME -->
+        <td class="text-muted">
+          {{ r.created_at | fmt_dt }}
+        </td>
 
 
-                  <div>
+        <!-- DELETE + CHECKBOX -->
+        <td class="text-center">
 
-                    <strong>
+          <form method="post"
+                action="{{ url_for('delete_measurement', mid=r.id) }}"
+                class="d-inline"
+                data-id="{{ r.id }}"
+                onsubmit="return askPwdAndConfirm(this);">
 
-                      #{{ r.action.seq_no or '—' }}
+            <input type="hidden" name="password" value="">
 
-                    </strong>
+            <button type="submit"
+                    class="btn btn-outline-danger btn-sm">
+              Xoá
+            </button>
 
-                    •
+          </form>
 
-                    {{ r.action.action }}
+          <div class="mt-2">
+            <input type="checkbox"
+                   class="form-check-input bulk-delete-check"
+                   value="{{ r.id }}"
+                   aria-label="Chọn bài đo {{ r.id }}">
+          </div>
 
-                  </div>
+        </td>
 
-
-                  <div class="text-muted">
-
-
-                    Owner:
-
-                    {{ r.action.owner or '—' }}
-
-                    •
-
-
-                    Due:
-
-                    {{ r.action.due_date
-                       and r.action.due_date.strftime('%Y-%m-%d')
-                       or '—' }}
-
-                    •
+      </tr>
 
 
-                    <span
-                      class="badge-status"
-                      data-s="{{ r.action.status }}"
-                    >
+      <!-- ===== ACTION MỞ RỘNG ===== -->
+      <tr id="carow-{{ r.id }}" class="ca-row">
 
-                      {{ r.action.status
-                         | replace('_', ' ')
-                         | title }}
+        <td colspan="12">
 
-                    </span>
+          <div class="ca-card">
+
+            {% if r.action %}
+
+              <div class="mb-3" style="font-size:.9rem">
+
+                <div>
+                  <strong>#{{ r.action.seq_no or '—' }}</strong>
+                  • {{ r.action.action }}
+                </div>
+
+                <div class="text-muted">
+                  Owner: {{ r.action.owner or '—' }}
+                  •
+                  Due:
+                  {{ r.action.due_date and r.action.due_date.strftime('%Y-%m-%d') or '—' }}
+                  •
+
+                  <span class="badge-status"
+                        data-s="{{ r.action.status }}">
+
+                    {{ r.action.status | replace('_',' ') | title }}
+
+                  </span>
+                </div>
+
+              </div>
+
+            {% endif %}
 
 
-                  </div>
+            <form method="post"
+                  action="{{ url_for('upsert_action', mid=r.id) }}">
 
+              <div class="ca-grid">
 
+                <div>
+                  <label class="form-label mb-1">STT</label>
+
+                  <input type="number"
+                         name="seq_no"
+                         class="form-control form-control-sm"
+                         placeholder="#"
+                         value="{{ r.action and r.action.seq_no or '' }}">
                 </div>
 
 
-              {% endif %}
-
-
-
-
-              <!-- FORM CẬP NHẬT ACTION -->
-
-              <form
-                method="post"
-                action="{{ url_for('upsert_action', mid=r.id) }}"
-              >
-
-
-                <div class="ca-grid">
-
-
-
-                  <!-- STT -->
-                  <div>
-
-
-                    <label class="form-label mb-1">
-
-                      STT
-
-                    </label>
-
-
-                    <input
-                      type="number"
-                      name="seq_no"
-                      class="form-control form-control-sm"
-                      placeholder="#"
-                      value="{{ r.action and r.action.seq_no or '' }}"
-                    >
-
-
-                  </div>
-
-
-
-
-                  <!-- HÀNH ĐỘNG -->
-                  <div>
-
-
-                    <label class="form-label mb-1">
-
-                      Hành động
-
-                    </label>
-
-
-                    <input
-                      name="action"
-                      class="form-control form-control-sm"
-                      placeholder="Mô tả hành động cần làm"
-                      required
-                      value="{{ r.action and r.action.action or '' }}"
-                    >
-
-
-                  </div>
-
-
-
-
-                  <!-- OWNER -->
-                  <div>
-
-
-                    <label class="form-label mb-1">
-
-                      Người phụ trách
-
-                    </label>
-
-
-                    <input
-                      name="owner"
-                      class="form-control form-control-sm"
-                      placeholder="VD: Minh/QA"
-                      value="{{ r.action and r.action.owner or '' }}"
-                    >
-
-
-                  </div>
-
-
-
-
-                  <!-- DUE DATE -->
-                  <div>
-
-
-                    <label class="form-label mb-1">
-
-                      Thời hạn
-
-                    </label>
-
-
-                    <input
-                      type="date"
-                      name="due_date"
-                      class="form-control form-control-sm"
-                      value="{{ r.action
-                               and r.action.due_date
-                               and r.action.due_date.strftime('%Y-%m-%d')
-                               or '' }}"
-                    >
-
-
-                  </div>
-
-
-
-
-                  <!-- STATUS -->
-                  <div>
-
-
-                    <label class="form-label mb-1">
-
-                      Tình trạng
-
-                    </label>
-
-
-                    <select
-                      name="status"
-                      class="form-select form-select-sm"
-                    >
-
-
-                      {% set st =
-                        r.action
-                        and r.action.status
-                        or 'open'
-                      %}
-
-
-                      <option
-                        value="open"
-                        {{ 'selected'
-                           if st == 'open'
-                           else '' }}
-                      >
-
-                        Open
-
-                      </option>
-
-
-                      <option
-                        value="in_progress"
-                        {{ 'selected'
-                           if st == 'in_progress'
-                           else '' }}
-                      >
-
-                        In progress
-
-                      </option>
-
-
-                      <option
-                        value="done"
-                        {{ 'selected'
-                           if st == 'done'
-                           else '' }}
-                      >
-
-                        Done
-
-                      </option>
-
-
-                    </select>
-
-
-                  </div>
-
-
-
-
-                  <!-- SAVE -->
-                  <div class="ca-actions align-self-end">
-
-
-                    <button
-                      class="btn btn-primary btn-sm"
-                      type="submit"
-                    >
-
-                      Lưu
-
-                    </button>
-
-
-                    <span class="ca-hint">
-
-                      Chỉ mở form khi cần cập nhật
-
-                    </span>
-
-
-                  </div>
-
-
+                <div>
+                  <label class="form-label mb-1">Hành động</label>
+
+                  <input name="action"
+                         class="form-control form-control-sm"
+                         placeholder="Mô tả hành động cần làm"
+                         required
+                         value="{{ r.action and r.action.action or '' }}">
                 </div>
 
 
-              </form>
+                <div>
+                  <label class="form-label mb-1">
+                    Người phụ trách
+                  </label>
+
+                  <input name="owner"
+                         class="form-control form-control-sm"
+                         placeholder="VD: Minh/QA"
+                         value="{{ r.action and r.action.owner or '' }}">
+                </div>
 
 
-            </div>
+                <div>
+                  <label class="form-label mb-1">
+                    Thời hạn
+                  </label>
+
+                  <input type="date"
+                         name="due_date"
+                         class="form-control form-control-sm"
+                         value="{{ r.action and r.action.due_date and r.action.due_date.strftime('%Y-%m-%d') or '' }}">
+                </div>
 
 
-          </td>
+                <div>
+                  <label class="form-label mb-1">
+                    Tình trạng
+                  </label>
+
+                  {% set st = r.action and r.action.status or 'open' %}
+
+                  <select name="status"
+                          class="form-select form-select-sm">
+
+                    <option value="open"
+                            {{ 'selected' if st == 'open' else '' }}>
+                      Open
+                    </option>
+
+                    <option value="in_progress"
+                            {{ 'selected' if st == 'in_progress' else '' }}>
+                      In progress
+                    </option>
+
+                    <option value="done"
+                            {{ 'selected' if st == 'done' else '' }}>
+                      Done
+                    </option>
+
+                  </select>
+                </div>
 
 
-        </tr>
+                <div class="ca-actions align-self-end">
+
+                  <button class="btn btn-primary btn-sm"
+                          type="submit">
+                    Lưu
+                  </button>
+
+                  <span class="ca-hint">
+                    Chỉ mở form khi cần cập nhật
+                  </span>
+
+                </div>
+
+              </div>
+
+            </form>
+
+          </div>
+
+        </td>
+
+      </tr>
 
 
       {% else %}
 
-
-        <tr>
-
-
-          <td
-            colspan="12"
-            class="text-center text-muted"
-          >
-
-            Chưa có dữ liệu
-
-          </td>
-
-
-        </tr>
-
+      <tr>
+        <td colspan="12"
+            class="text-center text-muted">
+          Chưa có dữ liệu
+        </td>
+      </tr>
 
       {% endfor %}
 
-
     </tbody>
-
 
   </table>
 
-
 </div>
-
 
 {% endif %}
 
 
-
-
-
-<!-- =========================================================
-     JAVASCRIPT
-     ========================================================= -->
-
 <script>
-
-
-  /* =========================================================
-     MỞ / ĐÓNG ACTION
-     ========================================================= */
-
-  document.addEventListener('click', (e) => {
-
-
+  // =====================================================
+  // MỞ / ĐÓNG ACTION
+  // =====================================================
+  document.addEventListener('click', e => {
     const btn = e.target.closest('.ca-toggle');
-
-
     if (!btn) return;
 
-
     const id = btn.dataset.mid;
+    const row = document.getElementById('carow-' + id);
+    const hasAction = btn.dataset.hasAction === '1';
 
-    const row =
-      document.getElementById('carow-' + id);
+    document.querySelectorAll('.ca-row.show').forEach(r => {
+      if (r !== row) r.classList.remove('show');
+    });
 
-    const hasAction =
-      btn.dataset.hasAction === '1';
-
-
-
-    /* Đóng các action khác */
-    document
-      .querySelectorAll('.ca-row.show')
-      .forEach(r => {
-
-        if (r !== row) {
-
-          r.classList.remove('show');
-
-        }
-
-      });
-
-
-
-    /* Reset text button khác */
-    document
-      .querySelectorAll(
-        '.ca-toggle[aria-expanded="true"]'
-      )
-      .forEach(b => {
-
-
-        if (b !== btn) {
-
-
-          const bHas =
-            b.dataset.hasAction === '1';
-
-
-          b.setAttribute(
-            'aria-expanded',
-            'false'
-          );
-
-
-          b.textContent =
-            bHas
-            ? 'Xem chi tiết'
-            : 'Cập nhật';
-
-
-        }
-
-
-      });
-
-
-
-    /* Toggle row hiện tại */
-    if (row) {
-
-
-      const willShow =
-        !row.classList.contains('show');
-
-
-      row.classList.toggle(
-        'show',
-        willShow
-      );
-
-
-      btn.setAttribute(
-        'aria-expanded',
-        willShow
-        ? 'true'
-        : 'false'
-      );
-
-
-      btn.textContent =
-        willShow
-        ? 'Đóng'
-        : (
-            hasAction
-            ? 'Xem chi tiết'
-            : 'Cập nhật'
-          );
-
-
-      if (willShow) {
-
-
-        row.scrollIntoView({
-
-          behavior: 'smooth',
-
-          block: 'nearest'
-
-        });
-
-
+    document.querySelectorAll('.ca-toggle[aria-expanded="true"]').forEach(b => {
+      if (b !== btn) {
+        const bHas = b.dataset.hasAction === '1';
+        b.setAttribute('aria-expanded', 'false');
+        b.textContent = bHas ? 'Xem chi tiết' : 'Cập nhật';
       }
+    });
 
+    if (!row) return;
 
+    const show = !row.classList.contains('show');
+
+    row.classList.toggle('show', show);
+    btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+    btn.textContent = show
+      ? 'Đóng'
+      : (hasAction ? 'Xem chi tiết' : 'Cập nhật');
+
+    if (show) {
+      row.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      });
     }
-
-
   });
 
 
-
-
-
-  /* =========================================================
-     XÓA BÀI ĐO
-     ========================================================= */
-
+  // =====================================================
+  // XÓA MỘT BÀI
+  // =====================================================
   function askPwdAndConfirm(form) {
+    const id = form.dataset.id;
+    const pwd = prompt(`Nhập mật khẩu để xoá bài đo #${id}:`);
 
+    if (!pwd) return false;
 
-    const id =
-      form.dataset.id;
-
-
-    const pwd =
-      prompt(
-        `Nhập mật khẩu để xoá bài đo #${id}:`
-      );
-
-
-    if (!pwd) {
-
-      return false;
-
-    }
-
-
-    form
-      .querySelector(
-        'input[name="password"]'
-      )
-      .value = pwd;
-
+    form.querySelector('input[name="password"]').value = pwd;
 
     return confirm(
       `Bạn chắc chắn muốn xoá bài đo #${id}?`
     );
-
-
   }
 
 
-</script>
-const checkAll = document.getElementById('check-all-delete');
-const deleteSelectedBtn = document.getElementById('btn-delete-selected');
+  // =====================================================
+  // XÓA NHIỀU BÀI
+  // =====================================================
+  const checkAll = document.getElementById('check-all-delete');
+  const bulkBtn = document.getElementById('btn-delete-selected');
 
-function getDeleteChecks() {
-  return Array.from(
-    document.querySelectorAll('.bulk-delete-check')
-  );
-}
+  const getChecks = () =>
+    [...document.querySelectorAll('.bulk-delete-check')];
 
-function updateBulkDeleteUI() {
-  const checks = getDeleteChecks();
+  function updateBulkDeleteUI() {
+    const checks = getChecks();
+    const selected = checks.filter(x => x.checked);
 
-  const selected = checks.filter(cb => cb.checked);
+    if (bulkBtn) {
+      bulkBtn.disabled = selected.length === 0;
+      bulkBtn.textContent = `Xóa đã chọn (${selected.length})`;
+    }
 
-  if (deleteSelectedBtn) {
-    deleteSelectedBtn.disabled = selected.length === 0;
-    deleteSelectedBtn.textContent =
-      `Xóa đã chọn (${selected.length})`;
+    if (checkAll) {
+      checkAll.checked =
+        checks.length > 0 &&
+        selected.length === checks.length;
+
+      checkAll.indeterminate =
+        selected.length > 0 &&
+        selected.length < checks.length;
+    }
   }
 
-  if (checkAll) {
-    checkAll.checked =
-      checks.length > 0 &&
-      selected.length === checks.length;
 
-    checkAll.indeterminate =
-      selected.length > 0 &&
-      selected.length < checks.length;
-  }
-}
+  // Tick chọn tất cả
+  checkAll?.addEventListener('change', () => {
+    getChecks().forEach(x => {
+      x.checked = checkAll.checked;
+    });
 
-
-checkAll?.addEventListener('change', function () {
-
-  getDeleteChecks().forEach(cb => {
-    cb.checked = this.checked;
+    updateBulkDeleteUI();
   });
+
+
+  // Tick từng bài
+  document.addEventListener('change', e => {
+    if (e.target.classList.contains('bulk-delete-check')) {
+      updateBulkDeleteUI();
+    }
+  });
+
+
+  // Xóa các bài đã chọn
+  bulkBtn?.addEventListener('click', () => {
+    const ids = getChecks()
+      .filter(x => x.checked)
+      .map(x => x.value);
+
+    if (!ids.length) return;
+
+    const pwd = prompt(
+      `Nhập mật khẩu để xoá ${ids.length} bài đo:`
+    );
+
+    if (!pwd) return;
+
+    if (!confirm(
+      `Bạn chắc chắn muốn xoá ${ids.length} bài đo đã chọn?`
+    )) return;
+
+
+    const form = document.createElement('form');
+
+    form.method = 'POST';
+    form.action = "{{ url_for('delete_selected_measurements') }}";
+
+
+    function addHidden(name, value) {
+      const input = document.createElement('input');
+
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+
+      form.appendChild(input);
+    }
+
+
+    ids.forEach(id => {
+      addHidden('selected_ids', id);
+    });
+
+    addHidden('password', pwd);
+
+    document.body.appendChild(form);
+    form.submit();
+  });
+
 
   updateBulkDeleteUI();
-
-});
-
-
-document.addEventListener('change', function(e) {
-
-  if (
-    e.target.classList.contains('bulk-delete-check')
-  ) {
-    updateBulkDeleteUI();
-  }
-
-});
-
-
-deleteSelectedBtn?.addEventListener('click', async function () {
-
-  const ids = getDeleteChecks()
-    .filter(cb => cb.checked)
-    .map(cb => cb.value);
-
-  if (!ids.length) return;
-
-
-  const pwd = prompt(
-    `Nhập mật khẩu để xoá ${ids.length} bài đo:`
-  );
-
-  if (!pwd) return;
-
-
-  const ok = confirm(
-    `Bạn chắc chắn muốn xoá ${ids.length} bài đo đã chọn?`
-  );
-
-  if (!ok) return;
-
-
-  const form = document.createElement('form');
-
-  form.method = 'POST';
-  form.action = '/measurements/delete_selected';
-
-
-  ids.forEach(id => {
-
-    const input = document.createElement('input');
-
-    input.type = 'hidden';
-    input.name = 'selected_ids';
-    input.value = id;
-
-    form.appendChild(input);
-
-  });
-
-
-  const pwdInput = document.createElement('input');
-
-  pwdInput.type = 'hidden';
-  pwdInput.name = 'password';
-  pwdInput.value = pwd;
-
-  form.appendChild(pwdInput);
-
-
-  document.body.appendChild(form);
-
-  form.submit();
-
-});
-
-
-updateBulkDeleteUI();
+</script>
 
 {% endblock %}
