@@ -1219,6 +1219,83 @@ def delete_measurement(mid):
         cur.execute("DELETE FROM measurements WHERE id = %s", (mid,))
     flash(f"Đã xoá bài đo #{mid}.", "success")
     return redirect(url_for("list_measurements"))
+    # ---------- XÓA NHIỀU BÀI ĐO ----------
+@app.route("/measurements/delete_selected", methods=["POST"])
+@login_required
+def delete_selected_measurements():
+
+    password = request.form.get("password", "")
+
+    # Lấy tất cả ID được tick từ checkbox
+    selected_ids_raw = request.form.getlist("selected_ids")
+
+    # Không chọn bài nào
+    if not selected_ids_raw:
+        flash("Chưa chọn bài đo nào để xoá.", "warning")
+        return redirect(url_for("list_measurements"))
+
+    # Chỉ cho phép ID là số nguyên
+    selected_ids = []
+
+    for value in selected_ids_raw:
+        try:
+            mid = int(value)
+
+            if mid > 0:
+                selected_ids.append(mid)
+
+        except (TypeError, ValueError):
+            continue
+
+    # Loại bỏ ID trùng
+    selected_ids = list(dict.fromkeys(selected_ids))
+
+    if not selected_ids:
+        flash("Danh sách bài đo cần xoá không hợp lệ.", "danger")
+        return redirect(url_for("list_measurements"))
+
+    with get_db() as con, con.cursor() as cur:
+
+        # 1. Kiểm tra mật khẩu người đang đăng nhập
+        cur.execute(
+            "SELECT password_hash FROM users WHERE id = %s",
+            (session.get("user_id"),)
+        )
+
+        u = cur.fetchone()
+
+        if not u or not check_password_hash(
+            u["password_hash"],
+            password
+        ):
+            flash(
+                "Mật khẩu không đúng. Không xoá bài đo.",
+                "danger"
+            )
+
+            return redirect(
+                url_for("list_measurements")
+            )
+
+        # 2. Xóa tất cả bài đo đã chọn trong một lần
+        cur.execute(
+            """
+            DELETE FROM measurements
+            WHERE id = ANY(%s)
+            """,
+            (selected_ids,)
+        )
+
+        deleted_count = cur.rowcount
+
+    flash(
+        f"Đã xoá {deleted_count} bài đo.",
+        "success"
+    )
+
+    return redirect(
+        url_for("list_measurements")
+    )
 
 
 # ---------- CẬP NHẬT HÀNH ĐỘNG (CORRECTIVE ACTION) ----------
