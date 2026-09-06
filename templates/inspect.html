@@ -323,8 +323,29 @@
     <hr class="my-3">
 
     {# HÀNG 4: Bảng hạng mục kiểm tra bổ sung #}
-    <div class="mt-2">
-      <h6 class="mb-2">Hạng mục kiểm tra bổ sung</h6>
+<div class="mt-2">
+
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    
+    <h6 class="mb-0">Hạng mục kiểm tra bổ sung</h6>
+
+    {% if verdict.overall is not none %}
+      <div>
+        <strong>Kết quả kiểm tra vừa rồi:</strong>
+
+        {% if verdict.overall %}
+          <span class="badge bg-success ms-1" style="font-size: 14px;">
+            OK
+          </span>
+        {% else %}
+          <span class="badge bg-danger ms-1" style="font-size: 14px;">
+            NG
+          </span>
+        {% endif %}
+      </div>
+    {% endif %}
+
+  </div>
       <div class="table-responsive">
         <table class="table table-sm align-middle" id="checks-table">
           <thead>
