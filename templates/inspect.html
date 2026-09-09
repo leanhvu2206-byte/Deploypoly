@@ -895,8 +895,14 @@ function setInputValueAndDispatch(el, raw) {
             document.querySelectorAll('#checks-table input.auto-input-ex').forEach(el => el.value = '');
             try { localStorage.removeItem('measure_prefill_' + {{ item_code | tojson }}); } catch(e) {}
 
-            const flow = buildFlowOrder();
-            (flow[0] || document.querySelector('input[name="actual_id"]'))?.focus();
+          const flow = buildFlowOrder();
+          
+          if (flow.length > 0) {
+            setTimeout(() => {
+              flow[0].focus();
+              flow[0].select?.();
+            }, 50);
+          }
 
             const tick = document.createElement('div');
             tick.className = 'done-tick';
