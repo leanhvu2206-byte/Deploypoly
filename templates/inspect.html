@@ -175,7 +175,13 @@
 {% else %}
 
   <!-- FORM ĐO + THÔNG TIN (đổi thứ tự các khối theo yêu cầu) -->
-  <form method="post" class="card p-3 mb-4" id="auto-form" novalidate>
+  <form
+    method="post"
+    class="card p-3 mb-4"
+    id="auto-form"
+    action="#auto-form"
+    novalidate
+>
     <input type="hidden" name="item_code" value="{{ item_code }}">
     <input type="hidden" name="extra_checks_actual" id="extra_checks_actual">
 
@@ -879,7 +885,9 @@ function setInputValueAndDispatch(el, raw) {
     }
   });
 }
-
+if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+}
           setupFocusFlow();
           (function focusFirstEmpty() {
             const flow = buildFlowOrder();
@@ -897,12 +905,38 @@ function setInputValueAndDispatch(el, raw) {
 
           const flow = buildFlowOrder();
           
-          if (flow.length > 0) {
-            setTimeout(() => {
-              flow[0].focus();
-              flow[0].select?.();
-            }, 50);
+          function refocusMeasurement() {
+              const newFlow = buildFlowOrder();
+          
+              if (!newFlow.length) return;
+          
+              const target = newFlow[0];
+          
+              // Cuộn tới đúng vùng đo
+              target.scrollIntoView({
+                  behavior: 'auto',
+                  block: 'center'
+              });
+          
+              // Focus vào ô đo
+              try {
+                  target.focus({
+                      preventScroll: true
+                  });
+              } catch (e) {
+                  target.focus();
+              }
+          
+              try {
+                  target.select();
+              } catch (e) {}
           }
+          
+          
+          // thử nhiều lần để hỗ trợ laptop + Android + iPhone/iPad
+          setTimeout(refocusMeasurement, 100);
+          setTimeout(refocusMeasurement, 300);
+          setTimeout(refocusMeasurement, 700);
 
             const tick = document.createElement('div');
             tick.className = 'done-tick';
